@@ -6,10 +6,10 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const tones = {
-  positive: "bg-emerald-50 text-emerald-700",
-  negative: "bg-red-50 text-red-700",
-  neutral: "bg-gray-100 text-gray-700",
-  gold: "bg-gold-100 text-gold-800"
+  positive: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+  negative: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  neutral: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+  gold: "bg-gold-100 text-gold-800 dark:bg-gold-900/30 dark:text-gold-300"
 };
 
 export function Badge({ className, tone = "neutral", ...props }: BadgeProps) {

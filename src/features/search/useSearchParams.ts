@@ -5,6 +5,7 @@ export function useSearchParams() {
     cityName,
     cityCode,
     countryCode,
+    propertyId,
     latitude,
     longitude,
     searchToken,
@@ -12,6 +13,7 @@ export function useSearchParams() {
     checkOutDate,
     adults,
     directRate,
+    useSuggestedCompset,
     hotelType,
     estimatedOccupancy
   } = useSearchStore();
@@ -20,6 +22,7 @@ export function useSearchParams() {
     cityName,
     cityCode,
     countryCode,
+    propertyId,
     latitude,
     longitude,
     searchToken,
@@ -27,6 +30,7 @@ export function useSearchParams() {
     checkOutDate,
     adults,
     directRate,
+    useSuggestedCompset,
     hotelType,
     estimatedOccupancy
   };

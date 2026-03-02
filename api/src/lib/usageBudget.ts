@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import type { ExternalProvider, ProviderUsageRow, ProviderUsageSummary } from "../types.js";
+import type { ActiveUsageProvider, ExternalProvider, ProviderUsageRow, ProviderUsageSummary } from "../types.js";
 import { executeSql, initDatabase, queryJson, sqlQuote } from "./db.js";
 import { UpstreamError } from "./http.js";
 
@@ -21,6 +21,12 @@ function providerQuota(provider: ExternalProvider) {
   }
   if (provider === "serpapi") {
     return config.serpApiDailyCallBudget;
+  }
+  if (provider === "cloudbeds") {
+    return config.cloudbedsDailyCallBudget;
+  }
+  if (provider === "airdna") {
+    return config.airdnaDailyCallBudget;
   }
   return config.amadeusFlightsDailyCallBudget;
 }
@@ -118,8 +124,13 @@ export function assertProviderBudget(provider: ExternalProvider, critical = fals
 }
 
 export function getUsageSummary() {
-  const providers: ExternalProvider[] = ["makcorps", "predicthq", "serpapi", "amadeus_flights"];
-  const details = providers.map((provider) => getProviderUsage(provider));
+  const activeProviders: ActiveUsageProvider[] = [
+    "makcorps",
+    "predicthq",
+    "serpapi",
+    "amadeus_flights"
+  ];
+  const details = activeProviders.map((provider) => getProviderUsage(provider));
 
   return {
     day: todayIsoDate(),

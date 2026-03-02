@@ -14,6 +14,7 @@ describe("ParitySummaryCard", () => {
       <ParitySummaryCard
         directRate={229}
         parity={{
+          propertyId: "default",
           marketKey: "austin-us",
           directRate: 229,
           tolerancePct: 2,

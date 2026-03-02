@@ -6,6 +6,7 @@ interface SearchState {
   cityName: string;
   cityCode: string | null;
   countryCode: string;
+  propertyId: string;
   latitude: number;
   longitude: number;
   searchToken: number;
@@ -13,6 +14,7 @@ interface SearchState {
   checkOutDate: string;
   adults: number;
   directRate: number;
+  useSuggestedCompset: boolean;
   hotelType: HotelType;
   estimatedOccupancy: number;
   setCity: (payload: {
@@ -25,6 +27,8 @@ interface SearchState {
   setDates: (checkInDate: string, checkOutDate: string) => void;
   setAdults: (adults: number) => void;
   setDirectRate: (directRate: number) => void;
+  setUseSuggestedCompset: (useSuggestedCompset: boolean) => void;
+  setPropertyId: (propertyId: string) => void;
   setHotelType: (hotelType: HotelType) => void;
   setEstimatedOccupancy: (estimatedOccupancy: number) => void;
   runAnalysis: () => void;
@@ -38,6 +42,7 @@ export const useSearchStore = create<SearchState>((set) => ({
   cityName: "Austin",
   cityCode: "AUS",
   countryCode: "US",
+  propertyId: "default",
   latitude: 30.2672,
   longitude: -97.7431,
   searchToken: 0,
@@ -45,6 +50,7 @@ export const useSearchStore = create<SearchState>((set) => ({
   checkOutDate: defaultCheckOutDate,
   adults: 2,
   directRate: 229,
+  useSuggestedCompset: false,
   hotelType: "city",
   estimatedOccupancy: 68,
   setCity: (payload) =>
@@ -58,6 +64,11 @@ export const useSearchStore = create<SearchState>((set) => ({
   setDates: (checkInDate, checkOutDate) => set({ checkInDate, checkOutDate }),
   setAdults: (adults) => set({ adults }),
   setDirectRate: (directRate) => set({ directRate }),
+  setUseSuggestedCompset: (useSuggestedCompset) => set({ useSuggestedCompset }),
+  setPropertyId: (propertyId) =>
+    set({
+      propertyId: propertyId.trim().length ? propertyId.trim().slice(0, 64) : "default"
+    }),
   setHotelType: (hotelType) => set({ hotelType }),
   setEstimatedOccupancy: (estimatedOccupancy) => set({ estimatedOccupancy }),
   runAnalysis: () => set((state) => ({ searchToken: state.searchToken + 1 }))

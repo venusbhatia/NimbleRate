@@ -1,6 +1,10 @@
 import { apiFetch } from "./apiClient";
 import { apiPath } from "./backendBaseUrl";
-import type { CompsetRatesResponse, CompsetSearchResponse } from "../types/compset";
+import type {
+  CompsetRatesResponse,
+  CompsetSearchResponse,
+  CompsetSuggestionsResponse
+} from "../types/compset";
 
 export function searchCompset(params: {
   city: string;
@@ -19,6 +23,19 @@ export function getCompsetRates(params: {
   checkOutDate: string;
 }) {
   return apiFetch<CompsetRatesResponse>(apiPath("/api/compset/rates"), {
+    params: params as unknown as Record<string, string | number | boolean | undefined>
+  });
+}
+
+export function getCompsetSuggestions(params: {
+  cityName: string;
+  countryCode: string;
+  propertyId?: string;
+  latitude: number;
+  longitude: number;
+  maxResults?: number;
+}) {
+  return apiFetch<CompsetSuggestionsResponse>(apiPath("/api/compset/suggestions"), {
     params: params as unknown as Record<string, string | number | boolean | undefined>
   });
 }

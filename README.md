@@ -43,8 +43,8 @@ Set secrets in `api/.env.local`:
   - `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (optional legacy auth fallback)
   - `PREDICTHQ_API_TOKEN`
   - `SERPAPI_API_KEY`
-  - `PMS_PROVIDER=simulated|cloudbeds` (default `simulated`)
-  - `CLOUDBEDS_API_KEY`, `CLOUDBEDS_PROPERTY_ID` (only when `PMS_PROVIDER=cloudbeds`)
+  - `PMS_PROVIDER=simulated` (Cloudbeds deferred in this deployment)
+  - `CLOUDBEDS_*` and `AIRDNA_*` vars are deferred and not used at runtime
 
 3. Start dev server:
 
@@ -128,16 +128,26 @@ src/
 - Dashboard also uses:
   - `/api/market/history` for DB-backed historical trend retrieval.
   - `/api/parity/summary` for DB-backed OTA parity risk vs direct rate.
+  - `/api/pms/health` for simulated PMS mode status (Cloudbeds disabled in this deployment).
+  - `/api/supply/str` for STR supply pressure (`fallback_proxy` only in this deployment).
+  - `/api/portfolio/summary` for multi-property rollup.
+  - `/api/pace/anomalies` for occupancy pace anomaly alerts.
+  - `/api/revenue/analytics` for ADR/RevPAR/occupancy trend series.
+  - `/api/properties` for property registry.
+  - `/api/rates/push`, `/api/rates/push/jobs`, `/api/rates/push/jobs/:jobId` for dry-run workflow and job history.
+  - `/api/compset/suggestions` for deterministic compset ranking candidates.
 - Parity baseline is the explicit `Direct Rate` entered in the search panel.
 - External provider calls are made only when the user clicks `Run Analysis`.
 - History/parity routes do not call external providers and do not consume provider budgets.
 - `/api/usage/summary` powers provider call counters and quota warnings in Settings.
 - Demo defaults are Austin-first (`AUS`, US) while global city search remains enabled.
 - `/api/market/analysis` returns `analysisContext`, `fallbacksUsed`, `sourceHealth`, and `explainabilityByDate` for per-date explainability UI.
+- `/api/market/analysis` also returns additive runtime fields: `paceSource` (`simulated`), `pmsSyncAt` (`null`), `supplySource` (`fallback_proxy`), and optional `compsetSuggestionVersion`.
+- Property scoping is supported with `propertyId` (default `default`) across analysis/history/parity and operations endpoints.
 - Phase-2 Wave-1 active signals:
   - Search demand (SerpAPI trends)
   - Travel intent (Amadeus flight demand)
-  - PMS pace mode (`simulated` by default, Cloudbeds scaffold fallback)
+  - PMS pace mode (`simulated` only in this deployment)
   - Curated university demand calendar
 
 ## Notes
@@ -145,6 +155,11 @@ src/
 - Frontend now uses backend proxy routes under `/api`.
 - Keep secrets only in `api/.env.local`.
 - Set `NIMBLERATE_DB_PATH` in `api/.env.local` only if you want to override the default SQLite path (`api/data/nimblerate.db`).
+- Publish safety contract:
+  - `POST /api/rates/push` supports `mode=dry_run`.
+  - `POST /api/rates/push` with `mode=publish|rollback` returns `409` with `PUBLISH_PROVIDER_DISABLED`.
+  - Requests are idempotent via `idempotencyKey`; duplicates return the existing job.
+  - Dry-run jobs are still persisted and visible in job history.
 - Fallback matrix in `/api/market/analysis`:
   - `trends_fallback_neutral`
   - `flight_demand_fallback_neutral`

@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { CompsetPositionChart } from "../components/charts/CompsetPositionChart";
 import { HistoricalTrendChart } from "../components/charts/HistoricalTrendChart";
 import { OccupancyBarChart } from "../components/charts/OccupancyBarChart";
 import { PriceHeatmap } from "../components/charts/PriceHeatmap";
 import { PriceLineChart } from "../components/charts/PriceLineChart";
+import { createRatePushJob, getRatePushJob, listRatePushJobs } from "../services/channelManagerApi";
+import { getCompsetSuggestions } from "../services/compsetApi";
+import { createProperty, getProperties, updateProperty } from "../services/propertiesApi";
 import { Badge } from "../components/ui/Badge";
 import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -62,9 +66,18 @@ export function DashboardPage() {
     usageSummary,
     warnings,
     analysisContext,
+    paceSource,
+    pmsSyncAt,
+    supplySource,
+    compsetSuggestionVersion,
     fallbacksUsed,
     history,
     parity,
+    pmsHealth,
+    supply,
+    portfolio,
+    anomalies,
+    revenueAnalytics,
     hasRunAnalysis,
     isLoading,
     isFetching,
@@ -73,21 +86,26 @@ export function DashboardPage() {
   const activeNav = useDashboardStore((state) => state.activeNav);
   const pricePeriod = useDashboardStore((state) => state.pricePeriod);
   const directRate = useSearchStore((state) => state.directRate);
+  const setUseSuggestedCompset = useSearchStore((state) => state.setUseSuggestedCompset);
+  const searchState = useSearchStore((state) => ({
+    propertyId: state.propertyId,
+    cityName: state.cityName,
+    countryCode: state.countryCode,
+    latitude: state.latitude,
+    longitude: state.longitude,
+    checkInDate: state.checkInDate,
+    checkOutDate: state.checkOutDate
+  }));
+  const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 w-full" />
-          ))}
-        </div>
-        <Skeleton className="h-80 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const [pushNotes, setPushNotes] = useState("");
+  const [newProperty, setNewProperty] = useState({
+    propertyId: "",
+    name: "",
+    countryCode: "US",
+    cityName: "Austin"
+  });
 
   const anchorRecommendation = model.pricing[0];
   const scopedPricing = model.pricing.slice(0, pricePeriod);
@@ -115,6 +133,116 @@ export function DashboardPage() {
   const isMakcorpsDegraded = fallbacksUsed.some(
     (fallback) => fallback === "makcorps_fallback_amadeus" || fallback === "compset_fallback_static"
   );
+
+  const propertiesQuery = useQuery({
+    queryKey: ["properties"],
+    staleTime: 30_000,
+    queryFn: getProperties
+  });
+
+  const ratePushJobsQuery = useQuery({
+    queryKey: ["rate-push-jobs", searchState.propertyId],
+    enabled: hasRunAnalysis && activeNav === "settings",
+    staleTime: 10_000,
+    queryFn: async () => listRatePushJobs({ propertyId: searchState.propertyId, limit: 25 })
+  });
+
+  const selectedJobQuery = useQuery({
+    queryKey: ["rate-push-job", selectedJobId],
+    enabled: selectedJobId !== null,
+    queryFn: async () => getRatePushJob(selectedJobId as number)
+  });
+
+  const compsetSuggestionsQuery = useQuery({
+    queryKey: [
+      "compset-suggestions",
+      searchState.propertyId,
+      searchState.cityName,
+      searchState.countryCode,
+      searchState.latitude,
+      searchState.longitude
+    ],
+    enabled: hasRunAnalysis && activeNav === "settings",
+    staleTime: 60_000,
+    queryFn: async () =>
+      getCompsetSuggestions({
+        propertyId: searchState.propertyId,
+        cityName: searchState.cityName,
+        countryCode: searchState.countryCode,
+        latitude: searchState.latitude,
+        longitude: searchState.longitude,
+        maxResults: 8
+      })
+  });
+
+  const createPropertyMutation = useMutation({
+    mutationFn: createProperty,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      setNewProperty({
+        propertyId: "",
+        name: "",
+        countryCode: "US",
+        cityName: "Austin"
+      });
+    }
+  });
+
+  const updatePropertyMutation = useMutation({
+    mutationFn: ({
+      propertyId,
+      totalRooms
+    }: {
+      propertyId: string;
+      totalRooms: number;
+    }) => updateProperty(propertyId, { totalRooms }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+    }
+  });
+
+  const createRatePushMutation = useMutation({
+    mutationFn: createRatePushJob,
+    onSuccess: (payload) => {
+      queryClient.invalidateQueries({ queryKey: ["rate-push-jobs", searchState.propertyId] });
+      setSelectedJobId(payload.jobId);
+    }
+  });
+
+  const triggerRatePush = () => {
+    const baseRates = model.pricing.slice(0, 7).map((day) => ({
+      date: day.date,
+      rate: Number(day.finalRate.toFixed(2)),
+      currency: "USD"
+    }));
+
+    if (!baseRates.length) {
+      return;
+    }
+
+    createRatePushMutation.mutate({
+      propertyId: searchState.propertyId,
+      marketKey: `${searchState.cityName}-${searchState.countryCode}`.toLowerCase(),
+      mode: "dry_run",
+      manualApproval: false,
+      notes: pushNotes || undefined,
+      rates: baseRates
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
+        </div>
+        <Skeleton className="h-80 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -225,7 +353,9 @@ export function DashboardPage() {
                   {model.recommendationConfidence.level}
                 </Badge>
                 <Badge tone="neutral">{analysisContext.cityName}</Badge>
+                {analysisContext.propertyId ? <Badge tone="neutral">Property {analysisContext.propertyId}</Badge> : null}
                 <Badge tone="neutral" className="uppercase">{analysisContext.pmsMode}</Badge>
+                {compsetSuggestionVersion ? <Badge tone="gold">Compset {compsetSuggestionVersion}</Badge> : null}
               </div>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{model.recommendationConfidence.reason}</p>
             </Card>
@@ -236,7 +366,7 @@ export function DashboardPage() {
               <h3 className="text-lg font-semibold tracking-tight">Demand Intent</h3>
               <Badge tone="gold">Phase 2</Badge>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Search Momentum</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
@@ -255,6 +385,13 @@ export function DashboardPage() {
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Campus Demand Days</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
                   {model.insights.signals.campusDemandDays}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Supply Pressure</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {supply?.supplyPressureIndex ?? 50}
+                  <span className="text-sm font-medium text-gray-500">/100</span>
                 </p>
               </div>
             </div>
@@ -440,6 +577,292 @@ export function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+            <h3 className="text-lg font-bold tracking-tight">Operations Snapshot</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              PMS mode, supply pressure, portfolio rollup, and anomaly monitoring.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">PMS Mode</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">{pmsHealth?.activeMode ?? paceSource}</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {pmsHealth?.providers.find((provider) => provider.provider === "cloudbeds")?.message ??
+                    "Cloudbeds is disabled in this deployment; simulated PMS is active."}
+                </p>
+                <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                  Last sync: {pmsSyncAt ? new Date(pmsSyncAt).toLocaleString() : "n/a"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">STR Supply Source</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {supply?.supplyPressureIndex ?? 50}/100
+                </p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {supply
+                    ? `Fallback Proxy • ${supply.trend}`
+                    : "Run analysis to refresh supply pressure."}
+                </p>
+                <div className="mt-1">
+                  <Badge tone="gold">
+                    {supplySource ?? "fallback_proxy"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Portfolio</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {portfolio?.propertyCount ?? 0} properties
+                </p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {portfolio
+                    ? `ADR $${portfolio.totals.adrAvg.toFixed(0)} • RevPAR $${portfolio.totals.revparAvg.toFixed(0)}`
+                    : "Portfolio rollup appears after analysis history exists."}
+                </p>
+              </div>
+            </div>
+
+	            <div className="mt-4 grid gap-3 md:grid-cols-2">
+	              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Revenue Analytics</p>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                  {revenueAnalytics
+                    ? `ADR trend ${revenueAnalytics.summary.adrTrendPct.toFixed(1)}% • RevPAR trend ${revenueAnalytics.summary.revparTrendPct.toFixed(1)}%`
+                    : "Run analysis to build ADR/RevPAR trend analytics."}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Pace Anomalies</p>
+	                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+	                  {anomalies
+	                    ? `${anomalies.anomalies.length} anomaly ${anomalies.anomalies.length === 1 ? "flag" : "flags"} in ${anomalies.windowDays} days`
+	                    : "No anomaly baseline yet. Build history with repeated analysis runs."}
+	                </p>
+	              </div>
+	            </div>
+	          </div>
+
+          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+            <h3 className="text-lg font-bold tracking-tight">Rate Publish Console</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Dry-run only in this deployment. Live publish and rollback are disabled.
+            </p>
+            <div className="mt-4">
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Notes</span>
+                <input
+                  type="text"
+                  value={pushNotes}
+                  onChange={(event) => setPushNotes(event.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-neutral-800 dark:text-gray-100"
+                  placeholder="Optional deployment note"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={triggerRatePush}
+                className="rounded-lg border border-gold-300 bg-gold-100 px-3 py-1.5 text-xs font-semibold text-gold-900 transition hover:bg-gold-200 dark:border-gold-700/50 dark:bg-gold-900/30 dark:text-gold-300"
+              >
+                Run dry-run push
+              </button>
+            </div>
+            {createRatePushMutation.error ? (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                {(createRatePushMutation.error as Error).message}
+              </p>
+            ) : null}
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <th className="px-3 py-2">Job ID</th>
+                    <th className="px-3 py-2">Mode</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Requested</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ratePushJobsQuery.data?.jobs?.length ? (
+                    ratePushJobsQuery.data.jobs.map((job) => (
+                      <tr
+                        key={job.id}
+                        className="cursor-pointer border-t border-gray-100 transition hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-neutral-800/60"
+                        onClick={() => setSelectedJobId(job.id)}
+                      >
+                        <td className="px-3 py-2 font-medium tabular-nums">#{job.id}</td>
+                        <td className="px-3 py-2 uppercase">{job.mode}</td>
+                        <td className="px-3 py-2">
+                          <Badge tone={job.status === "completed" || job.status === "rolled_back" ? "positive" : job.status === "failed" ? "negative" : "gold"}>
+                            {job.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">
+                          {new Date(job.requestedAt).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="px-3 py-3 text-gray-500 dark:text-gray-400" colSpan={4}>
+                        No push jobs yet for this property.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {selectedJobQuery.data ? (
+              <div className="mt-3 rounded-lg border border-gray-200/70 bg-gray-50/80 p-3 text-xs dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="font-semibold">Selected job #{selectedJobQuery.data.job.id}</p>
+                <p className="mt-1 text-gray-600 dark:text-gray-300">
+                  {selectedJobQuery.data.items.filter((item) => item.status === "failed").length} failed of{" "}
+                  {selectedJobQuery.data.items.length} items.
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+              <h3 className="text-lg font-bold tracking-tight">Property Registry</h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Server-backed property records power scoped analysis and dry-run rate operations.
+              </p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      <th className="px-3 py-2">Property</th>
+                      <th className="px-3 py-2">City</th>
+                      <th className="px-3 py-2">Rooms</th>
+                      <th className="px-3 py-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(propertiesQuery.data?.properties ?? []).map((property) => (
+                      <tr key={property.propertyId} className="border-t border-gray-100 dark:border-gray-800">
+                        <td className="px-3 py-2">
+                          <p className="font-medium">{property.name}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{property.propertyId}</p>
+                        </td>
+                        <td className="px-3 py-2">{property.cityName}, {property.countryCode}</td>
+                        <td className="px-3 py-2 tabular-nums">{property.totalRooms}</td>
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePropertyMutation.mutate({
+                                propertyId: property.propertyId,
+                                totalRooms: property.totalRooms + 1
+                              })
+                            }
+                            className="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-neutral-800"
+                          >
+                            +1 room
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-4">
+                <input
+                  type="text"
+                  value={newProperty.propertyId}
+                  onChange={(event) => setNewProperty((prev) => ({ ...prev, propertyId: event.target.value }))}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-neutral-800 dark:text-gray-100"
+                  placeholder="property-id"
+                />
+                <input
+                  type="text"
+                  value={newProperty.name}
+                  onChange={(event) => setNewProperty((prev) => ({ ...prev, name: event.target.value }))}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-neutral-800 dark:text-gray-100"
+                  placeholder="Name"
+                />
+                <input
+                  type="text"
+                  value={newProperty.cityName}
+                  onChange={(event) => setNewProperty((prev) => ({ ...prev, cityName: event.target.value }))}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-neutral-800 dark:text-gray-100"
+                  placeholder="City"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    createPropertyMutation.mutate({
+                      propertyId: newProperty.propertyId,
+                      name: newProperty.name,
+                      cityName: newProperty.cityName,
+                      countryCode: newProperty.countryCode
+                    })
+                  }
+                  className="rounded-lg bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                >
+                  Create property
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+              <h3 className="text-lg font-bold tracking-tight">Compset Suggestions</h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Deterministic clustering suggests compset peers by geo, rate-band, and demand fit.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUseSuggestedCompset(true)}
+                  className="rounded-md border border-gold-300 bg-gold-100 px-2 py-1 text-xs font-semibold text-gold-900 transition hover:bg-gold-200 dark:border-gold-700/50 dark:bg-gold-900/30 dark:text-gold-300"
+                >
+                  Apply to next analysis
+                </button>
+                {compsetSuggestionVersion ? <Badge tone="gold">Active {compsetSuggestionVersion}</Badge> : null}
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      <th className="px-3 py-2">Hotel</th>
+                      <th className="px-3 py-2">Score</th>
+                      <th className="px-3 py-2">Confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compsetSuggestionsQuery.data?.suggestions?.length ? (
+                      compsetSuggestionsQuery.data.suggestions.map((suggestion) => (
+                        <tr key={suggestion.hotelId} className="border-t border-gray-100 dark:border-gray-800">
+                          <td className="px-3 py-2">
+                            <p className="font-medium">{suggestion.hotelName}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{suggestion.explanation}</p>
+                          </td>
+                          <td className="px-3 py-2 tabular-nums">{suggestion.score}</td>
+                          <td className="px-3 py-2">
+                            <Badge tone={suggestion.confidence === "high" ? "positive" : suggestion.confidence === "medium" ? "gold" : "neutral"}>
+                              {suggestion.confidence}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr className="border-t border-gray-100 dark:border-gray-800">
+                        <td className="px-3 py-3 text-gray-500 dark:text-gray-400" colSpan={3}>
+                          {compsetSuggestionsQuery.isError
+                            ? "No suggestions yet. Run analysis to create compset history."
+                            : "Suggestions will appear after analysis data is available."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 

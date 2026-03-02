@@ -29,3 +29,26 @@ export interface CompsetSummary {
   averageRate: number;
   sampleSize: number;
 }
+
+export interface CompsetSuggestion {
+  hotelId: string;
+  hotelName: string;
+  score: number;
+  confidence: "high" | "medium" | "low";
+  distanceKm: number | null;
+  features: {
+    geodistance: number;
+    rateBand: number;
+    demandSimilarity: number;
+  };
+  explanation: string;
+}
+
+export interface CompsetSuggestionsResponse {
+  version: string;
+  propertyId: string;
+  propertyName: string;
+  marketKey: string;
+  generatedAt: string;
+  suggestions: CompsetSuggestion[];
+}

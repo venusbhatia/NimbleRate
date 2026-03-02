@@ -7,6 +7,7 @@ export interface MarketAnalysisParams {
   cityName: string;
   cityCode?: string | null;
   countryCode: string;
+  propertyId?: string;
   latitude: number;
   longitude: number;
   checkInDate: string;
@@ -19,6 +20,7 @@ export interface MarketAnalysisParams {
   minPrice?: number;
   maxPrice?: number;
   totalRooms?: number;
+  useSuggestedCompset?: boolean;
 }
 
 export function getMarketAnalysis(params: MarketAnalysisParams) {

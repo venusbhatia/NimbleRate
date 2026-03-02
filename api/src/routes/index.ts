@@ -1,14 +1,17 @@
 import type { Express, Response } from "express";
+import { createHash } from "node:crypto";
 import { addDays, format, parseISO } from "date-fns";
 import ngeohash from "ngeohash";
 import { z } from "zod";
 import { config } from "../config.js";
 import { amadeusGet } from "../lib/amadeus.js";
+import { suggestCompsetCandidates } from "../lib/compsetClustering.js";
 import { executeSql, queryJson, sqlQuote } from "../lib/db.js";
 import { generatePaceSimulation } from "../lib/paceSimulator.js";
 import { calculateV2Recommendations, summarizeRates, type V2WeatherCategory } from "../lib/priceEngineV2.js";
 import { buildUrl, fetchJsonCached, RequestValidationError, toApiError, UpstreamError } from "../lib/http.js";
 import { resolvePmsPace } from "../lib/pms/adapter.js";
+import { createSimulatedPmsAdapter } from "../lib/pms/simulatedAdapter.js";
 import { getAmadeusFlightDemandSignal, type FlightDemandSignal } from "../lib/providers/amadeusFlightDemand.js";
 import { searchMakcorpsCompset, getMakcorpsHotelRates, diagnoseMakcorpsCompset } from "../lib/providers/makcorps.js";
 import { searchPredictHQEvents } from "../lib/providers/predicthq.js";
@@ -137,6 +140,7 @@ const marketAnalysisSchema = z.object({
   cityName: zOptionalString,
   cityCode: zOptionalString,
   countryCode: zRequiredString,
+  propertyId: zOptionalString,
   latitude: zRequiredString,
   longitude: zRequiredString,
   checkInDate: zRequiredString,
@@ -148,18 +152,21 @@ const marketAnalysisSchema = z.object({
   targetMarketPosition: zOptionalNumber,
   minPrice: zOptionalNumber,
   maxPrice: zOptionalNumber,
-  totalRooms: zOptionalNumber
+  totalRooms: zOptionalNumber,
+  useSuggestedCompset: zOptionalBoolean
 });
 
 const marketHistorySchema = z.object({
   cityName: zRequiredString,
   countryCode: zRequiredString,
+  propertyId: zOptionalString,
   days: zOptionalNumber
 });
 
 const paritySummarySchema = z.object({
   cityName: zRequiredString,
   countryCode: zRequiredString,
+  propertyId: zOptionalString,
   checkInDate: zRequiredString,
   checkOutDate: zRequiredString,
   directRate: z.preprocess(
@@ -169,12 +176,97 @@ const paritySummarySchema = z.object({
   tolerancePct: zOptionalNumber
 });
 
+const strSupplySchema = z.object({
+  cityName: zRequiredString,
+  countryCode: zRequiredString,
+  propertyId: zOptionalString,
+  latitude: zOptionalNumber,
+  longitude: zOptionalNumber,
+  daysForward: zOptionalNumber
+});
+
+const propertiesCreateSchema = z.object({
+  propertyId: zRequiredString,
+  name: zRequiredString,
+  countryCode: zRequiredString,
+  cityName: zRequiredString,
+  latitude: zOptionalNumber,
+  longitude: zOptionalNumber,
+  hotelType: zOptionalString,
+  totalRooms: zOptionalNumber,
+  channelProvider: zOptionalString
+});
+
+const propertiesUpdateSchema = z.object({
+  name: zOptionalString,
+  countryCode: zOptionalString,
+  cityName: zOptionalString,
+  latitude: zOptionalNumber,
+  longitude: zOptionalNumber,
+  hotelType: zOptionalString,
+  totalRooms: zOptionalNumber,
+  channelProvider: zOptionalString
+});
+
+const compsetSuggestionsSchema = z.object({
+  cityName: zRequiredString,
+  countryCode: zRequiredString,
+  propertyId: zOptionalString,
+  latitude: zRequiredString,
+  longitude: zRequiredString,
+  maxResults: zOptionalNumber
+});
+
+const portfolioSummarySchema = z.object({
+  days: zOptionalNumber
+});
+
+const paceAnomaliesSchema = z.object({
+  cityName: zRequiredString,
+  countryCode: zRequiredString,
+  propertyId: zOptionalString,
+  days: zOptionalNumber
+});
+
+const ratePushJobsListSchema = z.object({
+  propertyId: zOptionalString,
+  limit: zOptionalNumber
+});
+
+const revenueAnalyticsSchema = z.object({
+  cityName: zRequiredString,
+  countryCode: zRequiredString,
+  propertyId: zOptionalString,
+  days: zOptionalNumber
+});
+
 const paceSimulationBodySchema = z.object({
   totalRooms: z.coerce.number().int().positive().max(2000).default(40),
   daysForward: z.coerce.number().int().min(7).max(180).default(90),
   hotelType: z.enum(["city", "business", "leisure", "beach", "ski"]).default("city"),
   seed: z.string().trim().min(1).optional(),
   startDate: z.string().trim().min(1).optional()
+});
+
+const ratePushBodySchema = z.object({
+  propertyId: zOptionalString,
+  marketKey: zRequiredString,
+  mode: z.enum(["dry_run", "publish", "rollback"]).default("dry_run"),
+  manualApproval: z.coerce.boolean().default(false),
+  idempotencyKey: zOptionalString,
+  requestedBy: zOptionalString,
+  notes: zOptionalString,
+  rollbackJobId: z.coerce.number().int().positive().optional(),
+  rates: z
+    .array(
+      z.object({
+        date: z.string().trim().min(1),
+        rate: z.coerce.number().positive(),
+        currency: z.string().trim().min(1).optional(),
+        previousRate: z.coerce.number().positive().optional()
+      })
+    )
+    .default([])
 });
 
 type TicketmasterEvent = {
@@ -339,17 +431,205 @@ function toWeatherSummary(payload: unknown) {
     });
 }
 
-function saveCompsetSnapshot(city: string, checkInDate: string, checkOutDate: string, rows: Array<{
-  hotelId: string;
-  hotelName: string;
-  rate: number;
-  ota: string;
-}>) {
+function sanitizePropertyId(raw: string | null | undefined) {
+  const trimmed = raw?.trim();
+  if (!trimmed) return "default";
+  return trimmed.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64) || "default";
+}
+
+type PropertyRecord = {
+  propertyId: string;
+  name: string;
+  countryCode: string;
+  cityName: string;
+  latitude: number | null;
+  longitude: number | null;
+  hotelType: "city" | "business" | "leisure" | "beach" | "ski";
+  totalRooms: number;
+  channelProvider: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function normalizeHotelType(raw: string | null | undefined): PropertyRecord["hotelType"] {
+  const normalized = (raw ?? "").trim().toLowerCase();
+  if (normalized === "business") return "business";
+  if (normalized === "leisure") return "leisure";
+  if (normalized === "beach") return "beach";
+  if (normalized === "ski") return "ski";
+  return "city";
+}
+
+function mapPropertyRow(row: {
+  property_id: string;
+  name: string;
+  country_code: string;
+  city_name: string;
+  lat: number | null;
+  lon: number | null;
+  hotel_type: string;
+  total_rooms: number;
+  channel_provider: string;
+  created_at: string;
+  updated_at: string;
+}): PropertyRecord {
+  return {
+    propertyId: row.property_id,
+    name: row.name,
+    countryCode: row.country_code,
+    cityName: row.city_name,
+    latitude: row.lat === null ? null : Number(row.lat),
+    longitude: row.lon === null ? null : Number(row.lon),
+    hotelType: normalizeHotelType(row.hotel_type),
+    totalRooms: Math.max(1, Number(row.total_rooms || 40)),
+    channelProvider: (row.channel_provider || "simulated").toLowerCase(),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function getPropertyById(propertyId: string) {
+  const row = queryJson<{
+    property_id: string;
+    name: string;
+    country_code: string;
+    city_name: string;
+    lat: number | null;
+    lon: number | null;
+    hotel_type: string;
+    total_rooms: number;
+    channel_provider: string;
+    created_at: string;
+    updated_at: string;
+  }>(`
+    SELECT property_id, name, country_code, city_name, lat, lon, hotel_type, total_rooms, channel_provider, created_at, updated_at
+    FROM properties
+    WHERE property_id = ${sqlQuote(propertyId)}
+    LIMIT 1;
+  `)[0];
+
+  return row ? mapPropertyRow(row) : null;
+}
+
+function requirePropertyById(propertyId: string) {
+  const property = getPropertyById(propertyId);
+  if (!property) {
+    throw new UpstreamError("Property not found", 404, {
+      code: "PROPERTY_NOT_FOUND",
+      propertyId,
+      hint: "Create the property via POST /api/properties."
+    });
+  }
+  return property;
+}
+
+function fallbackSupplyFromSnapshots(input: {
+  propertyId: string;
+  cityName: string;
+  countryCode: string;
+  daysForward: number;
+}) {
+  const marketKey = normalizeMarketKey(input.cityName, input.countryCode);
+  const cutoffIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const cityLower = input.cityName.trim().toLowerCase();
+
+  const rows = queryJson<{ day: string; sample_size: number; avg_rate: number }>(`
+    SELECT substr(collected_at, 1, 10) AS day,
+           COUNT(*) AS sample_size,
+           AVG(rate) AS avg_rate
+    FROM compset_snapshots
+    WHERE property_id = ${sqlQuote(input.propertyId)}
+      AND lower(city) = ${sqlQuote(cityLower)}
+      AND collected_at >= ${sqlQuote(cutoffIso)}
+    GROUP BY substr(collected_at, 1, 10)
+    ORDER BY day ASC;
+  `);
+
+  if (!rows.length) {
+    return {
+      propertyId: input.propertyId,
+      marketKey,
+      source: "fallback_proxy" as const,
+      status: "neutral_fallback" as const,
+      supplyPressureIndex: 50,
+      recommendedMultiplier: 1,
+      activeListingsEstimate: 0,
+      trend: "unknown" as const,
+      daysForward: input.daysForward
+    };
+  }
+
+  const sampleAvg = average(rows.map((row) => Number(row.sample_size) || 0));
+  const firstRate = Number(rows[0].avg_rate || 0);
+  const lastRate = Number(rows[rows.length - 1].avg_rate || 0);
+  const trendPct = firstRate > 0 ? ((lastRate - firstRate) / firstRate) * 100 : 0;
+  const supplyPressureIndex = Math.min(100, Math.max(0, Math.round(50 + (sampleAvg - 20) * 1.2 + trendPct * 0.8)));
+  const recommendedMultiplier =
+    supplyPressureIndex >= 75
+      ? 0.94
+      : supplyPressureIndex >= 60
+        ? 0.97
+        : supplyPressureIndex >= 45
+          ? 1
+          : supplyPressureIndex >= 30
+            ? 1.03
+            : 1.06;
+
+  return {
+    propertyId: input.propertyId,
+    marketKey,
+    source: "fallback_proxy" as const,
+    status: "ok" as const,
+    supplyPressureIndex,
+    recommendedMultiplier: Number(recommendedMultiplier.toFixed(2)),
+    activeListingsEstimate: Math.max(1, Math.round(sampleAvg * 0.6)),
+    trend: trendPct >= 4 ? ("rising" as const) : trendPct <= -4 ? ("falling" as const) : ("stable" as const),
+    trendPct: Number(trendPct.toFixed(2)),
+    daysForward: input.daysForward
+  };
+}
+
+function buildIdempotencyKey(payload: {
+  propertyId: string;
+  marketKey: string;
+  mode: string;
+  rollbackJobId?: number | null;
+  rates: Array<{ date: string; rate: number; currency?: string }>;
+}) {
+  const canonical = JSON.stringify({
+    propertyId: payload.propertyId,
+    marketKey: payload.marketKey,
+    mode: payload.mode,
+    rollbackJobId: payload.rollbackJobId ?? null,
+    rates: payload.rates
+      .map((rate) => ({
+        date: rate.date,
+        rate: Number(rate.rate),
+        currency: (rate.currency ?? "USD").toUpperCase()
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function saveCompsetSnapshot(
+  propertyId: string,
+  city: string,
+  checkInDate: string,
+  checkOutDate: string,
+  rows: Array<{
+    hotelId: string;
+    hotelName: string;
+    rate: number;
+    ota: string;
+  }>
+) {
   const collectedAt = new Date().toISOString();
   rows.forEach((row) => {
     executeSql(`
-      INSERT INTO compset_snapshots(city, check_in, check_out, hotel_name, hotel_id, rate, ota, collected_at)
+      INSERT INTO compset_snapshots(property_id, city, check_in, check_out, hotel_name, hotel_id, rate, ota, collected_at)
       VALUES (
+        ${sqlQuote(propertyId)},
         ${sqlQuote(city)},
         ${sqlQuote(checkInDate)},
         ${sqlQuote(checkOutDate)},
@@ -363,18 +643,85 @@ function saveCompsetSnapshot(city: string, checkInDate: string, checkOutDate: st
   });
 }
 
-function saveAnalysisRun(marketKey: string, confidence: string, anchorRate: number, recommendedRate: number, payload: unknown) {
+function saveAnalysisRun(
+  propertyId: string,
+  marketKey: string,
+  confidence: string,
+  anchorRate: number,
+  recommendedRate: number,
+  payload: unknown
+) {
+  const requestedAt = new Date().toISOString();
   executeSql(`
-    INSERT INTO analysis_runs(market_key, requested_at, confidence, anchor_rate, recommended_rate, payload_json)
+    INSERT INTO analysis_runs(property_id, market_key, requested_at, confidence, anchor_rate, recommended_rate, payload_json)
     VALUES (
+      ${sqlQuote(propertyId)},
       ${sqlQuote(marketKey)},
-      ${sqlQuote(new Date().toISOString())},
+      ${sqlQuote(requestedAt)},
       ${sqlQuote(confidence)},
       ${Number(anchorRate)},
       ${Number(recommendedRate)},
       ${sqlQuote(JSON.stringify(payload))}
     );
   `);
+
+  const insertedId = queryJson<{ id: number }>(`
+    SELECT id
+    FROM analysis_runs
+    WHERE property_id = ${sqlQuote(propertyId)}
+      AND market_key = ${sqlQuote(marketKey)}
+      AND requested_at = ${sqlQuote(requestedAt)}
+    ORDER BY id DESC
+    LIMIT 1;
+  `)[0]?.id;
+  return {
+    id: Number(insertedId ?? 0),
+    requestedAt
+  };
+}
+
+function saveAnalysisDailyRows(
+  analysisRunId: number,
+  propertyId: string,
+  marketKey: string,
+  createdAt: string,
+  rows: Array<{
+    date: string;
+    recommendedRate: number;
+    anchorRate: number;
+    occupancyRate: number;
+    finalMultiplier: number;
+    rawMultiplier: number;
+    eventImpact: number;
+    weatherCategory: string;
+  }>
+) {
+  if (!Number.isFinite(analysisRunId) || analysisRunId <= 0) {
+    return;
+  }
+
+  rows.forEach((row) => {
+    executeSql(`
+      INSERT INTO analysis_daily(
+        analysis_run_id, property_id, market_key, analysis_date, recommended_rate, anchor_rate, occupancy_rate,
+        final_multiplier, raw_multiplier, event_impact, weather_category, created_at
+      )
+      VALUES (
+        ${analysisRunId},
+        ${sqlQuote(propertyId)},
+        ${sqlQuote(marketKey)},
+        ${sqlQuote(row.date)},
+        ${Number(row.recommendedRate)},
+        ${Number(row.anchorRate)},
+        ${Number(row.occupancyRate)},
+        ${Number(row.finalMultiplier)},
+        ${Number(row.rawMultiplier)},
+        ${Number(row.eventImpact)},
+        ${sqlQuote(row.weatherCategory)},
+        ${sqlQuote(createdAt)}
+      );
+    `);
+  });
 }
 
 function normalizeMarketKey(cityName: string, countryCode: string) {
@@ -587,6 +934,86 @@ export function registerRoutes(app: Express) {
     });
   });
 
+  app.get("/api/compset/suggestions", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, compsetSuggestionsSchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
+      const property = requirePropertyById(propertyId);
+      const maxResults = Math.min(20, Math.max(3, Math.round(params.maxResults ?? 8)));
+      const marketKey = normalizeMarketKey(params.cityName, params.countryCode);
+      const cityLower = params.cityName.trim().toLowerCase();
+
+      const candidates = queryJson<{
+        hotel_id: string;
+        hotel_name: string;
+        avg_rate: number;
+        sample_size: number;
+      }>(`
+        SELECT hotel_id, hotel_name, AVG(rate) AS avg_rate, COUNT(*) AS sample_size
+        FROM compset_snapshots
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND lower(city) = ${sqlQuote(cityLower)}
+        GROUP BY hotel_id, hotel_name
+        HAVING sample_size > 0
+        ORDER BY sample_size DESC, avg_rate ASC
+        LIMIT 120;
+      `).map((row) => ({
+        hotelId: row.hotel_id,
+        hotelName: row.hotel_name,
+        averageRate: Number(row.avg_rate || 0),
+        sampleSize: Number(row.sample_size || 0)
+      }));
+
+      if (!candidates.length) {
+        throw new UpstreamError("No compset snapshots available for suggestions", 409, {
+          code: "ANALYSIS_REQUIRED",
+          propertyId,
+          marketKey,
+          hint: "Run analysis first to generate compset history."
+        });
+      }
+
+      const latestAnalysis = queryJson<{ payload_json: string }>(`
+        SELECT payload_json
+        FROM analysis_runs
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND market_key = ${sqlQuote(marketKey)}
+        ORDER BY requested_at DESC
+        LIMIT 1;
+      `)[0];
+
+      let demandIndex = 50;
+      const anchorRate = average(candidates.map((candidate) => candidate.averageRate));
+      if (latestAnalysis?.payload_json) {
+        try {
+          const parsed = JSON.parse(latestAnalysis.payload_json) as Record<string, unknown>;
+          const kpis = parsed.kpis as Record<string, unknown> | undefined;
+          demandIndex = Number(kpis?.demandPressureIndex ?? demandIndex);
+        } catch {
+          // no-op
+        }
+      }
+
+      const suggestions = suggestCompsetCandidates({
+        latitude: Number(params.latitude),
+        longitude: Number(params.longitude),
+        anchorRate,
+        demandIndex,
+        maxResults,
+        candidates
+      });
+
+      return {
+        version: "v1",
+        propertyId,
+        propertyName: property.name,
+        marketKey,
+        generatedAt: new Date().toISOString(),
+        suggestions
+      };
+    });
+  });
+
   app.get("/api/events/predicthq", async (req, res) => {
     await withRoute(res, async () => {
       const params = validateQuery(req, predictHqSchema);
@@ -629,9 +1056,697 @@ export function registerRoutes(app: Express) {
     await withRoute(res, async () => getUsageSummary());
   });
 
+  app.get("/api/properties", async (_req, res) => {
+    await withRoute(res, async () => {
+      const rows = queryJson<{
+        property_id: string;
+        name: string;
+        country_code: string;
+        city_name: string;
+        lat: number | null;
+        lon: number | null;
+        hotel_type: string;
+        total_rooms: number;
+        channel_provider: string;
+        created_at: string;
+        updated_at: string;
+      }>(`
+        SELECT property_id, name, country_code, city_name, lat, lon, hotel_type, total_rooms, channel_provider, created_at, updated_at
+        FROM properties
+        ORDER BY updated_at DESC, property_id ASC;
+      `);
+
+      return {
+        generatedAt: new Date().toISOString(),
+        properties: rows.map(mapPropertyRow)
+      };
+    });
+  });
+
+  app.post("/api/properties", async (req, res) => {
+    await withRoute(res, async () => {
+      const parsed = propertiesCreateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new RequestValidationError(parsed.error.issues.map((issue) => issue.message).join("; "));
+      }
+
+      const body = parsed.data;
+      const propertyId = sanitizePropertyId(body.propertyId);
+      const existing = getPropertyById(propertyId);
+      if (existing) {
+        throw new UpstreamError("Property already exists", 409, {
+          code: "PROPERTY_EXISTS",
+          propertyId
+        });
+      }
+
+      const name = body.name.trim();
+      const countryCode = body.countryCode.trim().toUpperCase();
+      const cityName = body.cityName.trim();
+      const latitude = body.latitude !== undefined ? Number(body.latitude) : null;
+      const longitude = body.longitude !== undefined ? Number(body.longitude) : null;
+      const hotelType = normalizeHotelType(body.hotelType);
+      const totalRooms = Math.max(1, Math.round(Number(body.totalRooms ?? 40)));
+      const channelProvider = body.channelProvider?.trim().toLowerCase() || "simulated";
+      const nowIso = new Date().toISOString();
+
+      executeSql(`
+        INSERT INTO properties(
+          property_id, name, country_code, city_name, lat, lon, hotel_type, total_rooms, channel_provider, created_at, updated_at
+        )
+        VALUES (
+          ${sqlQuote(propertyId)},
+          ${sqlQuote(name)},
+          ${sqlQuote(countryCode)},
+          ${sqlQuote(cityName)},
+          ${latitude === null ? "NULL" : Number(latitude)},
+          ${longitude === null ? "NULL" : Number(longitude)},
+          ${sqlQuote(hotelType)},
+          ${totalRooms},
+          ${sqlQuote(channelProvider)},
+          ${sqlQuote(nowIso)},
+          ${sqlQuote(nowIso)}
+        );
+      `);
+
+      return {
+        created: true,
+        property: requirePropertyById(propertyId)
+      };
+    });
+  });
+
+  app.patch("/api/properties/:propertyId", async (req, res) => {
+    await withRoute(res, async () => {
+      const parsed = propertiesUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new RequestValidationError(parsed.error.issues.map((issue) => issue.message).join("; "));
+      }
+
+      const propertyId = sanitizePropertyId(req.params.propertyId);
+      const current = requirePropertyById(propertyId);
+      const updates = parsed.data;
+
+      const name = updates.name?.trim() || current.name;
+      const countryCode = updates.countryCode?.trim().toUpperCase() || current.countryCode;
+      const cityName = updates.cityName?.trim() || current.cityName;
+      const latitude = updates.latitude !== undefined ? Number(updates.latitude) : current.latitude;
+      const longitude = updates.longitude !== undefined ? Number(updates.longitude) : current.longitude;
+      const hotelType = updates.hotelType ? normalizeHotelType(updates.hotelType) : current.hotelType;
+      const totalRooms =
+        updates.totalRooms !== undefined ? Math.max(1, Math.round(Number(updates.totalRooms))) : current.totalRooms;
+      const channelProvider = updates.channelProvider?.trim().toLowerCase() || current.channelProvider;
+      const nowIso = new Date().toISOString();
+
+      executeSql(`
+        UPDATE properties
+        SET
+          name = ${sqlQuote(name)},
+          country_code = ${sqlQuote(countryCode)},
+          city_name = ${sqlQuote(cityName)},
+          lat = ${latitude === null ? "NULL" : Number(latitude)},
+          lon = ${longitude === null ? "NULL" : Number(longitude)},
+          hotel_type = ${sqlQuote(hotelType)},
+          total_rooms = ${Number(totalRooms)},
+          channel_provider = ${sqlQuote(channelProvider)},
+          updated_at = ${sqlQuote(nowIso)}
+        WHERE property_id = ${sqlQuote(propertyId)};
+      `);
+
+      return {
+        updated: true,
+        property: requirePropertyById(propertyId)
+      };
+    });
+  });
+
+  app.get("/api/pms/health", async (_req, res) => {
+    await withRoute(res, async () => {
+      const simulated = createSimulatedPmsAdapter();
+      const simulatedHealth = await simulated.health();
+      const cloudbedsDeferredHealth = {
+        provider: "cloudbeds" as const,
+        configured: false,
+        message: "Cloudbeds live mode is disabled in this deployment; simulated PMS remains active."
+      };
+
+      return {
+        selectedProvider: "simulated",
+        activeMode: "simulated",
+        fallbackEnabled: true,
+        generatedAt: new Date().toISOString(),
+        providers: [simulatedHealth, cloudbedsDeferredHealth]
+      };
+    });
+  });
+
+  app.post("/api/rates/push", async (req, res) => {
+    await withRoute(res, async () => {
+      const parsed = ratePushBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new RequestValidationError(parsed.error.issues.map((issue) => issue.message).join("; "));
+      }
+
+      const payload = parsed.data;
+      const propertyId = sanitizePropertyId(payload.propertyId);
+      const property = requirePropertyById(propertyId);
+      const marketKey = payload.marketKey.trim().toLowerCase();
+      const requestedBy = payload.requestedBy?.trim() || "operator";
+      const mode = payload.mode;
+
+      if (mode === "publish" || mode === "rollback") {
+        throw new UpstreamError(
+          "Live publish is disabled in this deployment. Use mode=dry_run to simulate rate pushes.",
+          409,
+          {
+            code: "PUBLISH_PROVIDER_DISABLED",
+            mode,
+            propertyId,
+            marketKey
+          }
+        );
+      }
+
+      const rates = payload.rates;
+      if (!rates.length) {
+        throw new RequestValidationError("At least one rate row is required.");
+      }
+
+      const normalizedRates = rates.map((rate) => ({
+        date: rate.date,
+        rate: Number(rate.rate),
+        currency: rate.currency?.trim().toUpperCase() || "USD",
+        previousRate: rate.previousRate
+      }));
+
+      const idempotencyKey =
+        payload.idempotencyKey?.trim() ||
+        buildIdempotencyKey({
+          propertyId,
+          marketKey,
+          mode,
+          rollbackJobId: payload.rollbackJobId ?? null,
+          rates: normalizedRates
+        });
+
+      const duplicateJob = queryJson<{
+        id: number;
+        status: string;
+        mode: string;
+      }>(`
+        SELECT id, status, mode
+        FROM rate_push_jobs
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND idempotency_key = ${sqlQuote(idempotencyKey)}
+          AND mode = ${sqlQuote(mode)}
+        ORDER BY id DESC
+        LIMIT 1;
+      `)[0];
+
+      if (duplicateJob) {
+        return {
+          jobId: duplicateJob.id,
+          propertyId,
+          marketKey,
+          mode: duplicateJob.mode,
+          status: duplicateJob.status,
+          manualApproval: payload.manualApproval,
+          simulated: mode === "dry_run",
+          idempotencyKey,
+          ratesCount: normalizedRates.length,
+          rollbackJobId: payload.rollbackJobId ?? null,
+          duplicate: true,
+          message: "Duplicate idempotent request detected. Returning existing job."
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      const initialStatus = mode === "dry_run" ? "completed" : "queued";
+      const approvedAt = mode === "dry_run" ? null : nowIso;
+      const completedAt = mode === "dry_run" ? nowIso : null;
+      const notes = payload.notes?.trim() ?? "";
+
+      executeSql(`
+        INSERT INTO rate_push_jobs(
+          property_id, market_key, mode, status, idempotency_key, requested_by, requested_at,
+          approved_at, completed_at, rollback_job_id, notes, payload_json
+        )
+        VALUES (
+          ${sqlQuote(propertyId)},
+          ${sqlQuote(marketKey)},
+          ${sqlQuote(mode)},
+          ${sqlQuote(initialStatus)},
+          ${sqlQuote(idempotencyKey)},
+          ${sqlQuote(requestedBy)},
+          ${sqlQuote(nowIso)},
+          ${approvedAt ? sqlQuote(approvedAt) : "NULL"},
+          ${completedAt ? sqlQuote(completedAt) : "NULL"},
+          ${payload.rollbackJobId ? Number(payload.rollbackJobId) : "NULL"},
+          ${sqlQuote(notes || "")},
+          ${sqlQuote(
+            JSON.stringify({
+              manualApproval: payload.manualApproval,
+              ratesCount: normalizedRates.length,
+              channelProvider: property.channelProvider
+            })
+          )}
+        );
+      `);
+
+      const jobId = Number(
+        queryJson<{ id: number }>(`
+          SELECT id
+          FROM rate_push_jobs
+          WHERE property_id = ${sqlQuote(propertyId)}
+            AND market_key = ${sqlQuote(marketKey)}
+            AND requested_at = ${sqlQuote(nowIso)}
+            AND mode = ${sqlQuote(mode)}
+          ORDER BY id DESC
+          LIMIT 1;
+      `)[0]?.id ?? 0
+      );
+
+      if (!Number.isFinite(jobId) || jobId <= 0) {
+        throw new UpstreamError("Failed to create rate push job", 500, { code: "JOB_CREATE_FAILED" });
+      }
+
+      const itemStatus = mode === "dry_run" ? "dry_run" : "queued";
+      normalizedRates.forEach((rate) => {
+        executeSql(`
+          INSERT INTO rate_push_job_items(
+            job_id, rate_date, target_rate, previous_rate, currency, status, message, external_reference, attempt_count, created_at
+          )
+          VALUES (
+            ${jobId},
+            ${sqlQuote(rate.date)},
+            ${Number(rate.rate)},
+            ${rate.previousRate ? Number(rate.previousRate) : "NULL"},
+            ${sqlQuote(rate.currency)},
+            ${sqlQuote(itemStatus)},
+            ${sqlQuote(mode === "dry_run" ? "Dry-run only; no external push executed." : "Queued for publish.")},
+            NULL,
+            1,
+            ${sqlQuote(nowIso)}
+          );
+        `);
+      });
+
+      return {
+        jobId,
+        propertyId,
+        marketKey,
+        mode,
+        status: initialStatus,
+        manualApproval: payload.manualApproval,
+        simulated: true,
+        idempotencyKey,
+        ratesCount: normalizedRates.length,
+        rollbackJobId: payload.rollbackJobId ?? null,
+        message:
+          "Dry-run complete. No channel-manager push was executed."
+      };
+    });
+  });
+
+  app.get("/api/rates/push/jobs", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, ratePushJobsListSchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
+      const limit = Math.min(100, Math.max(1, Math.round(params.limit ?? 20)));
+      requirePropertyById(propertyId);
+
+      const rows = queryJson<{
+        id: number;
+        property_id: string;
+        market_key: string;
+        mode: string;
+        status: string;
+        idempotency_key: string | null;
+        requested_by: string;
+        requested_at: string;
+        approved_at: string | null;
+        completed_at: string | null;
+        rollback_job_id: number | null;
+      }>(`
+        SELECT id, property_id, market_key, mode, status, idempotency_key, requested_by, requested_at, approved_at, completed_at, rollback_job_id
+        FROM rate_push_jobs
+        WHERE property_id = ${sqlQuote(propertyId)}
+        ORDER BY requested_at DESC
+        LIMIT ${limit};
+      `);
+
+      return {
+        propertyId,
+        jobs: rows.map((job) => ({
+          id: job.id,
+          propertyId: job.property_id,
+          marketKey: job.market_key,
+          mode: job.mode,
+          status: job.status,
+          idempotencyKey: job.idempotency_key,
+          requestedBy: job.requested_by,
+          requestedAt: job.requested_at,
+          approvedAt: job.approved_at,
+          completedAt: job.completed_at,
+          rollbackJobId: job.rollback_job_id
+        }))
+      };
+    });
+  });
+
+  app.get("/api/rates/push/jobs/:jobId", async (req, res) => {
+    await withRoute(res, async () => {
+      const jobId = Number(req.params.jobId);
+      if (!Number.isFinite(jobId) || jobId <= 0) {
+        throw new RequestValidationError("jobId must be a positive integer.");
+      }
+
+      const job = queryJson<{
+        id: number;
+        property_id: string;
+        market_key: string;
+        mode: string;
+        status: string;
+        idempotency_key: string | null;
+        requested_by: string;
+        requested_at: string;
+        approved_at: string | null;
+        completed_at: string | null;
+        rollback_job_id: number | null;
+        notes: string | null;
+        payload_json: string;
+      }>(`
+        SELECT id, property_id, market_key, mode, status, idempotency_key, requested_by, requested_at, approved_at,
+               completed_at, rollback_job_id, notes, payload_json
+        FROM rate_push_jobs
+        WHERE id = ${jobId}
+        LIMIT 1;
+      `)[0];
+
+      if (!job) {
+        throw new UpstreamError("Rate push job not found", 404, { code: "JOB_NOT_FOUND", jobId });
+      }
+
+      const items = queryJson<{
+        id: number;
+        rate_date: string;
+        target_rate: number;
+        previous_rate: number | null;
+        currency: string;
+        status: string;
+        external_reference: string | null;
+        attempt_count: number;
+        message: string | null;
+        created_at: string;
+      }>(`
+        SELECT id, rate_date, target_rate, previous_rate, currency, status, external_reference, attempt_count, message, created_at
+        FROM rate_push_job_items
+        WHERE job_id = ${jobId}
+        ORDER BY rate_date ASC;
+      `);
+
+      let parsedPayload: unknown = null;
+      try {
+        parsedPayload = JSON.parse(job.payload_json);
+      } catch {
+        parsedPayload = null;
+      }
+
+      return {
+        job: {
+          id: job.id,
+          propertyId: job.property_id,
+          marketKey: job.market_key,
+          mode: job.mode,
+          status: job.status,
+          idempotencyKey: job.idempotency_key,
+          requestedBy: job.requested_by,
+          requestedAt: job.requested_at,
+          approvedAt: job.approved_at,
+          completedAt: job.completed_at,
+          rollbackJobId: job.rollback_job_id,
+          notes: job.notes,
+          payload: parsedPayload
+        },
+        items: items.map((item) => ({
+          id: item.id,
+          date: item.rate_date,
+          rate: Number(item.target_rate),
+          previousRate: item.previous_rate === null ? null : Number(item.previous_rate),
+          currency: item.currency,
+          status: item.status,
+          externalReference: item.external_reference,
+          attemptCount: Math.max(1, Number(item.attempt_count || 1)),
+          message: item.message,
+          createdAt: item.created_at
+        }))
+      };
+    });
+  });
+
+  app.get("/api/supply/str", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, strSupplySchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
+      const property = requirePropertyById(propertyId);
+      const daysForward = Math.min(90, Math.max(7, Math.round(params.daysForward ?? 30)));
+      const cityName = params.cityName.trim() || property.cityName;
+      const countryCode = params.countryCode.trim().toUpperCase() || property.countryCode;
+
+      const fallback = fallbackSupplyFromSnapshots({
+        propertyId,
+        cityName,
+        countryCode,
+        daysForward
+      });
+
+      return {
+        ...fallback,
+        warning: "AirDNA is deferred in this deployment; using fallback proxy supply model."
+      };
+    });
+  });
+
+  app.get("/api/portfolio/summary", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, portfolioSummarySchema);
+      const days = Math.min(180, Math.max(7, Math.round(params.days ?? 30)));
+      const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      const rows = queryJson<{
+        property_id: string;
+        points: number;
+        run_count: number;
+        adr_avg: number;
+        occupancy_avg: number;
+        revpar_avg: number;
+        last_at: string;
+      }>(`
+        SELECT property_id,
+               COUNT(*) AS points,
+               COUNT(DISTINCT analysis_run_id) AS run_count,
+               AVG(recommended_rate) AS adr_avg,
+               AVG(occupancy_rate) AS occupancy_avg,
+               AVG(recommended_rate * (occupancy_rate / 100.0)) AS revpar_avg,
+               MAX(created_at) AS last_at
+        FROM analysis_daily
+        WHERE created_at >= ${sqlQuote(cutoffIso)}
+        GROUP BY property_id
+        ORDER BY last_at DESC;
+      `);
+
+      const properties = rows.map((row) => ({
+        propertyId: row.property_id,
+        analysisPoints: Number(row.points || 0),
+        analysisRuns: Number(row.run_count || 0),
+        adrAvg: Number(Number(row.adr_avg || 0).toFixed(2)),
+        occupancyAvg: Number(Number(row.occupancy_avg || 0).toFixed(2)),
+        revparAvg: Number(Number(row.revpar_avg || 0).toFixed(2)),
+        lastRunAt: row.last_at
+      }));
+
+      return {
+        windowDays: days,
+        propertyCount: properties.length,
+        totals: {
+          analysisRuns: properties.reduce((sum, row) => sum + row.analysisRuns, 0),
+          adrAvg: Number(average(properties.map((row) => row.adrAvg)).toFixed(2)),
+          occupancyAvg: Number(average(properties.map((row) => row.occupancyAvg)).toFixed(2)),
+          revparAvg: Number(average(properties.map((row) => row.revparAvg)).toFixed(2))
+        },
+        properties
+      };
+    });
+  });
+
+  app.get("/api/pace/anomalies", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, paceAnomaliesSchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
+      const days = Math.min(180, Math.max(14, Math.round(params.days ?? 45)));
+      const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const marketKey = normalizeMarketKey(params.cityName, params.countryCode);
+
+      const rows = queryJson<{
+        analysis_date: string;
+        occupancy_rate: number;
+        recommended_rate: number;
+        created_at: string;
+      }>(`
+        SELECT analysis_date, occupancy_rate, recommended_rate, created_at
+        FROM analysis_daily
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND market_key = ${sqlQuote(marketKey)}
+          AND created_at >= ${sqlQuote(cutoffIso)}
+        ORDER BY created_at DESC;
+      `);
+
+      if (!rows.length) {
+        throw new UpstreamError("No pace baseline found for this market", 409, {
+          code: "ANALYSIS_REQUIRED",
+          propertyId,
+          marketKey,
+          hint: "Run market analysis to build pace history before checking anomalies."
+        });
+      }
+
+      const latestByDate = new Map<string, { occupancy: number; rate: number }>();
+      rows.forEach((row) => {
+        if (!latestByDate.has(row.analysis_date)) {
+          latestByDate.set(row.analysis_date, {
+            occupancy: Number(row.occupancy_rate || 0),
+            rate: Number(row.recommended_rate || 0)
+          });
+        }
+      });
+
+      const series = Array.from(latestByDate.entries())
+        .map(([date, value]) => ({ date, occupancy: value.occupancy, rate: value.rate }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const anomalies: Array<{
+        date: string;
+        occupancy: number;
+        baseline: number;
+        delta: number;
+        severity: "low" | "medium" | "high";
+        message: string;
+      }> = [];
+
+      for (let idx = 7; idx < series.length; idx += 1) {
+        const baseline = average(series.slice(idx - 7, idx).map((row) => row.occupancy));
+        const current = series[idx].occupancy;
+        const delta = current - baseline;
+        if (Math.abs(delta) < 8) {
+          continue;
+        }
+        const severity = Math.abs(delta) >= 15 ? "high" : Math.abs(delta) >= 10 ? "medium" : "low";
+        anomalies.push({
+          date: series[idx].date,
+          occupancy: Number(current.toFixed(2)),
+          baseline: Number(baseline.toFixed(2)),
+          delta: Number(delta.toFixed(2)),
+          severity,
+          message:
+            delta > 0
+              ? "Occupancy is above recent booking pace baseline."
+              : "Occupancy is below recent booking pace baseline."
+        });
+      }
+
+      return {
+        propertyId,
+        marketKey,
+        windowDays: days,
+        baselineMethod: "7-day rolling occupancy average",
+        anomalies
+      };
+    });
+  });
+
+  app.get("/api/revenue/analytics", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, revenueAnalyticsSchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
+      const days = Math.min(180, Math.max(7, Math.round(params.days ?? 30)));
+      const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const marketKey = normalizeMarketKey(params.cityName, params.countryCode);
+
+      const rows = queryJson<{
+        analysis_date: string;
+        recommended_rate: number;
+        anchor_rate: number;
+        occupancy_rate: number;
+        created_at: string;
+      }>(`
+        SELECT analysis_date, recommended_rate, anchor_rate, occupancy_rate, created_at
+        FROM analysis_daily
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND market_key = ${sqlQuote(marketKey)}
+          AND created_at >= ${sqlQuote(cutoffIso)}
+        ORDER BY created_at DESC;
+      `);
+
+      if (!rows.length) {
+        throw new UpstreamError("No analytics data found for this market", 409, {
+          code: "ANALYSIS_REQUIRED",
+          propertyId,
+          marketKey,
+          hint: "Run market analysis to build analytics history."
+        });
+      }
+
+      const latestByDate = new Map<string, { adr: number; anchor: number; occupancy: number }>();
+      rows.forEach((row) => {
+        if (!latestByDate.has(row.analysis_date)) {
+          latestByDate.set(row.analysis_date, {
+            adr: Number(row.recommended_rate || 0),
+            anchor: Number(row.anchor_rate || 0),
+            occupancy: Number(row.occupancy_rate || 0)
+          });
+        }
+      });
+
+      const daily = Array.from(latestByDate.entries())
+        .map(([date, value]) => ({
+          date,
+          adr: Number(value.adr.toFixed(2)),
+          anchorRate: Number(value.anchor.toFixed(2)),
+          occupancy: Number(value.occupancy.toFixed(2)),
+          revpar: Number((value.adr * (value.occupancy / 100)).toFixed(2))
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const adrValues = daily.map((row) => row.adr);
+      const revparValues = daily.map((row) => row.revpar);
+      const occupancyValues = daily.map((row) => row.occupancy);
+      const firstAdr = adrValues[0] ?? 0;
+      const lastAdr = adrValues[adrValues.length - 1] ?? 0;
+      const firstRevpar = revparValues[0] ?? 0;
+      const lastRevpar = revparValues[revparValues.length - 1] ?? 0;
+
+      return {
+        propertyId,
+        marketKey,
+        windowDays: days,
+        daily,
+        summary: {
+          adrAvg: Number(average(adrValues).toFixed(2)),
+          revparAvg: Number(average(revparValues).toFixed(2)),
+          occupancyAvg: Number(average(occupancyValues).toFixed(2)),
+          adrTrendPct: firstAdr > 0 ? Number((((lastAdr - firstAdr) / firstAdr) * 100).toFixed(2)) : 0,
+          revparTrendPct: firstRevpar > 0 ? Number((((lastRevpar - firstRevpar) / firstRevpar) * 100).toFixed(2)) : 0,
+          volatilityPct:
+            average(adrValues) > 0 ? Number(((stdDev(adrValues) / average(adrValues)) * 100).toFixed(2)) : 0
+        }
+      };
+    });
+  });
+
   app.get("/api/market/history", async (req, res) => {
     await withRoute(res, async () => {
       const params = validateQuery(req, marketHistorySchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
       const days = Math.min(180, Math.max(7, Math.round(params.days ?? 30)));
       const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
       const normalizedTargetKey = normalizeMarketKey(params.cityName, params.countryCode);
@@ -646,7 +1761,8 @@ export function registerRoutes(app: Express) {
       }>(`
         SELECT market_key, requested_at, confidence, anchor_rate, recommended_rate
         FROM analysis_runs
-        WHERE requested_at >= ${sqlQuote(cutoffIso)}
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND requested_at >= ${sqlQuote(cutoffIso)}
         ORDER BY requested_at DESC
         LIMIT 2000;
       `).filter((row) => {
@@ -666,7 +1782,8 @@ export function registerRoutes(app: Express) {
       const snapshotRows = queryJson<{ collected_at: string; rate: number }>(`
         SELECT collected_at, rate
         FROM compset_snapshots
-        WHERE lower(city) = ${sqlQuote(params.cityName.trim().toLowerCase())}
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND lower(city) = ${sqlQuote(params.cityName.trim().toLowerCase())}
           AND collected_at >= ${sqlQuote(cutoffIso)}
         ORDER BY collected_at ASC;
       `);
@@ -741,6 +1858,7 @@ export function registerRoutes(app: Express) {
       const volatilityPct = recommendedAvg > 0 ? (stdDev(recommendedRates) / recommendedAvg) * 100 : 0;
 
       return {
+        propertyId,
         marketKey: normalizedTargetKey,
         windowDays: days,
         daily,
@@ -757,6 +1875,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/parity/summary", async (req, res) => {
     await withRoute(res, async () => {
       const params = validateQuery(req, paritySummarySchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
       const tolerancePct = Math.min(10, Math.max(0, Number(params.tolerancePct ?? 2)));
       const cityName = params.cityName.trim();
       const cityLower = cityName.toLowerCase();
@@ -768,7 +1887,8 @@ export function registerRoutes(app: Express) {
       const snapshotPointer = queryJson<{ collected_at: string }>(`
         SELECT collected_at
         FROM compset_snapshots
-        WHERE lower(city) = ${sqlQuote(cityLower)}
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND lower(city) = ${sqlQuote(cityLower)}
           AND check_in = ${sqlQuote(params.checkInDate)}
           AND check_out = ${sqlQuote(params.checkOutDate)}
         ORDER BY collected_at DESC
@@ -786,7 +1906,8 @@ export function registerRoutes(app: Express) {
       const parityRows = queryJson<{ hotel_name: string; ota: string; rate: number }>(`
         SELECT hotel_name, ota, rate
         FROM compset_snapshots
-        WHERE lower(city) = ${sqlQuote(cityLower)}
+        WHERE property_id = ${sqlQuote(propertyId)}
+          AND lower(city) = ${sqlQuote(cityLower)}
           AND check_in = ${sqlQuote(params.checkInDate)}
           AND check_out = ${sqlQuote(params.checkOutDate)}
           AND collected_at = ${sqlQuote(snapshotPointer.collected_at)}
@@ -851,6 +1972,7 @@ export function registerRoutes(app: Express) {
       const rates = rows.map((row) => row.rate);
 
       return {
+        propertyId,
         marketKey,
         directRate: Number(directRate.toFixed(2)),
         tolerancePct: Number(tolerancePct.toFixed(2)),
@@ -873,19 +1995,22 @@ export function registerRoutes(app: Express) {
   app.get("/api/market/analysis", async (req, res) => {
     await withRoute(res, async () => {
       const params = validateQuery(req, marketAnalysisSchema);
+      const propertyId = sanitizePropertyId(params.propertyId);
+      const property = requirePropertyById(propertyId);
 
-      const cityName = params.cityName ?? config.demoCity;
+      const cityName = params.cityName?.trim() || property.cityName || config.demoCity;
       const cityCode = params.cityCode?.trim().toUpperCase() || null;
-      const latitude = Number(params.latitude);
-      const longitude = Number(params.longitude);
-      const hotelType = (params.hotelType ?? "city") as "city" | "business" | "leisure" | "beach" | "ski";
+      const latitude = Number(params.latitude ?? property.latitude ?? config.demoLatitude);
+      const longitude = Number(params.longitude ?? property.longitude ?? config.demoLongitude);
+      const hotelType = normalizeHotelType(params.hotelType ?? property.hotelType);
       const estimatedOccupancy = Math.min(99, Math.max(15, Math.round(params.estimatedOccupancy ?? 68)));
       const adults = Math.max(1, Math.round(params.adults ?? 2));
       const daysForward = Math.min(90, Math.max(7, Math.round(params.daysForward ?? config.analysisDaysForward)));
       const targetMarketPosition = Math.min(1, Math.max(0, params.targetMarketPosition ?? 0.5));
       const minPrice = Math.max(30, Math.round(params.minPrice ?? 90));
       const maxPrice = Math.max(minPrice + 20, Math.round(params.maxPrice ?? 650));
-      const totalRooms = Math.max(10, Math.round(params.totalRooms ?? 40));
+      const totalRooms = Math.max(10, Math.round(params.totalRooms ?? property.totalRooms ?? 40));
+      const useSuggestedCompset = Boolean(params.useSuggestedCompset);
 
       const dateRange = Array.from({ length: daysForward }).map((_, idx) =>
         format(addDays(parseISO(params.checkInDate), idx), "yyyy-MM-dd")
@@ -1007,6 +2132,32 @@ export function registerRoutes(app: Express) {
         ];
       }
 
+      let compsetSuggestionVersion: string | null = null;
+      if (useSuggestedCompset && compsetHotels.length > 1) {
+        const suggestions = suggestCompsetCandidates({
+          latitude,
+          longitude,
+          anchorRate: average(compsetHotels.map((hotel) => hotel.medianRate)),
+          demandIndex: estimatedOccupancy,
+          maxResults: Math.min(8, compsetHotels.length),
+          candidates: compsetHotels.map((hotel) => ({
+            hotelId: hotel.hotelId,
+            hotelName: hotel.hotelName,
+            averageRate: hotel.medianRate,
+            sampleSize: hotel.otaRates.length
+          }))
+        });
+
+        if (suggestions.length) {
+          const rank = new Map(suggestions.map((item, index) => [item.hotelId, index] as const));
+          const selectedIds = new Set(suggestions.map((item) => item.hotelId));
+          compsetHotels = compsetHotels
+            .filter((hotel) => selectedIds.has(hotel.hotelId))
+            .sort((a, b) => (rank.get(a.hotelId) ?? 999) - (rank.get(b.hotelId) ?? 999));
+          compsetSuggestionVersion = "v1";
+        }
+      }
+
       const flattenedCompset = compsetHotels.flatMap((hotel) =>
         hotel.otaRates.map((ota) => ({
           hotelId: hotel.hotelId,
@@ -1016,7 +2167,7 @@ export function registerRoutes(app: Express) {
         }))
       );
 
-      saveCompsetSnapshot(cityName, params.checkInDate, params.checkOutDate, flattenedCompset);
+      saveCompsetSnapshot(propertyId, cityName, params.checkInDate, params.checkOutDate, flattenedCompset);
 
       const pmsResult = await resolvePmsPace({
         cityName,
@@ -1257,6 +2408,8 @@ export function registerRoutes(app: Express) {
         fallbacksUsed.add("university_fallback_none");
       }
 
+      const supplySource = "fallback_proxy" as const;
+
       const engineSignals = dateRange.map((date) => ({
         date,
         weatherCategory: weatherByDate.get(date) ?? "cloudy",
@@ -1325,7 +2478,7 @@ export function registerRoutes(app: Express) {
       const pmsErrorSummary =
         sourceDiagnostics.PMS.errors[0] ??
         (fallbacksUsed.has("pms_fallback_simulated")
-          ? "Cloudbeds unavailable; using simulated PMS pace."
+          ? "Cloudbeds disabled in this deployment; using simulated PMS pace."
           : undefined);
       const universityErrorSummary =
         sourceDiagnostics.University.errors[0] ??
@@ -1522,23 +2675,46 @@ export function registerRoutes(app: Express) {
         }
       };
 
-      saveAnalysisRun(
-        normalizeMarketKey(cityName, params.countryCode),
+      const normalizedMarketKey = normalizeMarketKey(cityName, params.countryCode);
+      const persistedRun = saveAnalysisRun(
+        propertyId,
+        normalizedMarketKey,
         model.recommendationConfidence.level,
         model.marketAnchor.anchorRate,
         model.compsetPosition.recommendedRate,
         {
+          propertyId,
           cityName,
           warnings,
           fallbacksUsed: Array.from(fallbacksUsed),
-          usage
+          usage,
+          kpis: model.kpis
         }
+      );
+      const signalByDate = new Map(engineSignals.map((signal) => [signal.date, signal] as const));
+      saveAnalysisDailyRows(
+        persistedRun.id,
+        propertyId,
+        normalizedMarketKey,
+        persistedRun.requestedAt,
+        engineOutput.recommendations.map((entry) => ({
+          date: entry.date,
+          recommendedRate: entry.finalRate,
+          anchorRate: engineOutput.anchorRate,
+          occupancyRate: signalByDate.get(entry.date)?.pace.occupancyRate ?? estimatedOccupancy,
+          finalMultiplier: entry.finalMultiplier,
+          rawMultiplier: entry.rawMultiplier,
+          eventImpact: signalByDate.get(entry.date)?.eventImpactScore ?? 0,
+          weatherCategory: signalByDate.get(entry.date)?.weatherCategory ?? "cloudy"
+        }))
       );
 
       return {
         generatedAt: new Date().toISOString(),
         warnings,
+        propertyId,
         analysisContext: {
+          propertyId,
           cityName,
           countryCode: params.countryCode,
           hotelType,
@@ -1547,6 +2723,10 @@ export function registerRoutes(app: Express) {
           phase: "phase2_wave1",
           pmsMode: pmsResult.modeUsed
         },
+        paceSource: pmsResult.modeUsed,
+        pmsSyncAt: pmsResult.pmsSyncAt,
+        supplySource,
+        compsetSuggestionVersion,
         fallbacksUsed: Array.from(fallbacksUsed),
         usage,
         model,

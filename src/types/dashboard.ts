@@ -13,7 +13,12 @@ export type DashboardApiErrorSource =
   | "analysis"
   | "usage"
   | "history"
-  | "parity";
+  | "parity"
+  | "pms"
+  | "supply"
+  | "portfolio"
+  | "anomalies"
+  | "revenue";
 
 export interface DashboardApiErrorDetail {
   source: DashboardApiErrorSource;
@@ -55,13 +60,14 @@ export interface DateExplainability {
 }
 
 export interface AnalysisContext {
+  propertyId?: string;
   cityName: string;
   countryCode: string;
   hotelType: "city" | "business" | "leisure" | "beach" | "ski";
   daysForward: number;
   runMode: "fallback_first";
   phase: "phase2_wave1";
-  pmsMode: "simulated" | "cloudbeds";
+  pmsMode: "simulated";
 }
 
 export interface SelectedDateExplainability {
@@ -167,7 +173,12 @@ export interface DashboardModel {
 export interface MarketAnalysisResponse {
   generatedAt: string;
   warnings: string[];
+  propertyId?: string;
   analysisContext: AnalysisContext;
+  paceSource?: "simulated";
+  pmsSyncAt?: string | null;
+  supplySource?: "fallback_proxy";
+  compsetSuggestionVersion?: string | null;
   fallbacksUsed: string[];
   usage: UsageSummaryResponse;
   model: DashboardModel;

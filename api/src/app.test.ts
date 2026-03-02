@@ -23,6 +23,10 @@ describe("api routes", () => {
       DELETE FROM provider_usage;
       DELETE FROM compset_snapshots;
       DELETE FROM analysis_runs;
+      DELETE FROM analysis_daily;
+      DELETE FROM rate_push_job_items;
+      DELETE FROM rate_push_jobs;
+      DELETE FROM properties WHERE property_id != 'default';
     `);
   });
 
@@ -115,12 +119,55 @@ describe("api routes", () => {
     expect(response.body.details?.code).toBe("NOT_CONFIGURED");
   });
 
+  it("returns ANALYSIS_REQUIRED for compset suggestions when no snapshots exist", async () => {
+    const response = await request(app).get(
+      "/api/compset/suggestions?cityName=Austin&countryCode=US&propertyId=default&latitude=30.2672&longitude=-97.7431"
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.details?.code).toBe("ANALYSIS_REQUIRED");
+  });
+
   it("returns usage summary endpoint payload", async () => {
     const response = await request(app).get("/api/usage/summary");
 
     expect(response.status).toBe(200);
     expect(response.body.providers).toBeDefined();
     expect(Array.isArray(response.body.providers)).toBe(true);
+    expect(response.body.providers).toHaveLength(4);
+    expect(response.body.providers.some((provider: { provider: string }) => provider.provider === "makcorps")).toBe(true);
+    expect(response.body.providers.some((provider: { provider: string }) => provider.provider === "predicthq")).toBe(true);
+    expect(response.body.providers.some((provider: { provider: string }) => provider.provider === "serpapi")).toBe(true);
+    expect(response.body.providers.some((provider: { provider: string }) => provider.provider === "amadeus_flights")).toBe(true);
+  });
+
+  it("returns default property and supports property create/update lifecycle", async () => {
+    const listResponse = await request(app).get("/api/properties");
+    expect(listResponse.status).toBe(200);
+    expect(Array.isArray(listResponse.body.properties)).toBe(true);
+    expect(listResponse.body.properties.some((property: { propertyId: string }) => property.propertyId === "default")).toBe(true);
+
+    const createResponse = await request(app).post("/api/properties").send({
+      propertyId: "demo-hotel",
+      name: "Demo Hotel",
+      countryCode: "US",
+      cityName: "Austin",
+      latitude: 30.2672,
+      longitude: -97.7431,
+      hotelType: "city",
+      totalRooms: 55,
+      channelProvider: "simulated"
+    });
+    expect(createResponse.status).toBe(200);
+    expect(createResponse.body.property.propertyId).toBe("demo-hotel");
+
+    const patchResponse = await request(app).patch("/api/properties/demo-hotel").send({
+      totalRooms: 63,
+      name: "Demo Hotel Updated"
+    });
+    expect(patchResponse.status).toBe(200);
+    expect(patchResponse.body.property.totalRooms).toBe(63);
+    expect(patchResponse.body.property.name).toBe("Demo Hotel Updated");
   });
 
   it("returns Makcorps diagnostics payload even when provider is not configured", async () => {
@@ -190,6 +237,12 @@ describe("api routes", () => {
     expect(response.body.analysisContext?.runMode).toBe("fallback_first");
     expect(response.body.analysisContext?.phase).toBe("phase2_wave1");
     expect(response.body.analysisContext?.pmsMode).toBe("simulated");
+    expect(response.body.paceSource).toBe("simulated");
+    expect(response.body.pmsSyncAt).toBeNull();
+    expect(response.body.supplySource).toBe("fallback_proxy");
+    expect(response.body.compsetSuggestionVersion === null || response.body.compsetSuggestionVersion === "v1").toBe(
+      true
+    );
     expect(Array.isArray(response.body.fallbacksUsed)).toBe(true);
     expect(response.body.fallbacksUsed).toContain("compset_fallback_static");
     expect(response.body.fallbacksUsed).toContain("trends_fallback_neutral");
@@ -356,5 +409,123 @@ describe("api routes", () => {
     expect(response.body.summary.overcutCount).toBeGreaterThan(0);
     expect(["low", "medium", "high"]).toContain(response.body.summary.riskLevel);
     expect(Array.isArray(response.body.alerts)).toBe(true);
+  });
+
+  it("returns pms health payload", async () => {
+    const response = await request(app).get("/api/pms/health");
+
+    expect(response.status).toBe(200);
+    expect(response.body.selectedProvider).toBe("simulated");
+    expect(response.body.activeMode).toBe("simulated");
+    expect(Array.isArray(response.body.providers)).toBe(true);
+    expect(response.body.providers.some((provider: { provider: string }) => provider.provider === "cloudbeds")).toBe(true);
+  });
+
+  it("returns supply fallback when no compset snapshot history exists", async () => {
+    const response = await request(app).get("/api/supply/str?cityName=Austin&countryCode=US&propertyId=default");
+
+    expect(response.status).toBe(200);
+    expect(response.body.source).toBe("fallback_proxy");
+    expect(response.body.status).toBe("neutral_fallback");
+    expect(response.body.supplyPressureIndex).toBe(50);
+    expect(response.body.warning).toContain("AirDNA is deferred");
+  });
+
+  it("creates dry-run rate push jobs and returns job details", async () => {
+    const createResponse = await request(app).post("/api/rates/push").send({
+      propertyId: "default",
+      marketKey: "austin-us",
+      mode: "dry_run",
+      manualApproval: false,
+      rates: [
+        { date: "2026-03-10", rate: 229, currency: "USD" },
+        { date: "2026-03-11", rate: 239, currency: "USD" }
+      ]
+    });
+
+    expect(createResponse.status).toBe(200);
+    expect(createResponse.body.jobId).toBeGreaterThan(0);
+    expect(createResponse.body.mode).toBe("dry_run");
+
+    const detailsResponse = await request(app).get(`/api/rates/push/jobs/${createResponse.body.jobId}`);
+    expect(detailsResponse.status).toBe(200);
+    expect(detailsResponse.body.job.mode).toBe("dry_run");
+    expect(detailsResponse.body.items.length).toBe(2);
+  });
+
+  it("returns same job for duplicate idempotent dry-run rate push request", async () => {
+    const payload = {
+      propertyId: "default",
+      marketKey: "austin-us",
+      mode: "dry_run",
+      manualApproval: false,
+      idempotencyKey: "test-idempotency-key",
+      rates: [{ date: "2026-03-10", rate: 229, currency: "USD" }]
+    };
+
+    const first = await request(app).post("/api/rates/push").send(payload);
+    const second = await request(app).post("/api/rates/push").send(payload);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.duplicate).toBe(true);
+    expect(second.body.jobId).toBe(first.body.jobId);
+  });
+
+  it("blocks publish and rollback modes when live publisher is disabled", async () => {
+    const response = await request(app).post("/api/rates/push").send({
+      propertyId: "default",
+      marketKey: "austin-us",
+      mode: "publish",
+      manualApproval: true,
+      rates: [{ date: "2026-03-10", rate: 229, currency: "USD" }]
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.details?.code).toBe("PUBLISH_PROVIDER_DISABLED");
+
+    const rollbackResponse = await request(app).post("/api/rates/push").send({
+      propertyId: "default",
+      marketKey: "austin-us",
+      mode: "rollback",
+      manualApproval: true,
+      rates: [{ date: "2026-03-10", rate: 229, currency: "USD" }]
+    });
+
+    expect(rollbackResponse.status).toBe(409);
+    expect(rollbackResponse.body.details?.code).toBe("PUBLISH_PROVIDER_DISABLED");
+  });
+
+  it("returns rate push jobs list", async () => {
+    await request(app).post("/api/rates/push").send({
+      propertyId: "default",
+      marketKey: "austin-us",
+      mode: "dry_run",
+      manualApproval: false,
+      rates: [{ date: "2026-03-10", rate: 229, currency: "USD" }]
+    });
+
+    const response = await request(app).get("/api/rates/push/jobs?propertyId=default&limit=10");
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body.jobs)).toBe(true);
+    expect(response.body.jobs.length).toBeGreaterThan(0);
+  });
+
+  it("returns ANALYSIS_REQUIRED for revenue analytics when no analysis history exists", async () => {
+    const response = await request(app).get(
+      "/api/revenue/analytics?cityName=Austin&countryCode=US&propertyId=default&days=30"
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.details?.code).toBe("ANALYSIS_REQUIRED");
+  });
+
+  it("returns ANALYSIS_REQUIRED for pace anomalies when no analysis history exists", async () => {
+    const response = await request(app).get(
+      "/api/pace/anomalies?cityName=Austin&countryCode=US&propertyId=default&days=45"
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.details?.code).toBe("ANALYSIS_REQUIRED");
   });
 });

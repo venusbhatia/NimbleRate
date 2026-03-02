@@ -4,6 +4,13 @@ import { addDays, format, parseISO } from "date-fns";
 import { getMarketAnalysis } from "../../services/analysisApi";
 import { ApiError } from "../../services/apiClient";
 import { getMarketHistory } from "../../services/historyApi";
+import {
+  getPaceAnomalies,
+  getPmsHealth,
+  getPortfolioSummary,
+  getRevenueAnalytics,
+  getStrSupply
+} from "../../services/operationsApi";
 import { getParitySummary } from "../../services/parityApi";
 import { getProviderUsageSummary } from "../../services/usageApi";
 import { useSearchParams } from "../search/useSearchParams";
@@ -19,6 +26,13 @@ import type {
 import type { PricingRecommendation } from "../../types/pricing";
 import type { LongWeekend, PublicHoliday } from "../../types/holidays";
 import type { MarketHistoryResponse } from "../../types/history";
+import type {
+  PaceAnomaliesResponse,
+  PmsHealthResponse,
+  PortfolioSummaryResponse,
+  RevenueAnalyticsResponse,
+  StrSupplyResponse
+} from "../../types/operations";
 import type { ParitySummaryResponse } from "../../types/parity";
 
 function normalizeEventDate(rawDate: string) {
@@ -269,11 +283,13 @@ export function useDashboardData() {
       params.cityName,
       params.cityCode,
       params.countryCode,
+      params.propertyId,
       params.latitude,
       params.longitude,
       params.checkInDate,
       params.checkOutDate,
       params.adults,
+      params.useSuggestedCompset,
       params.hotelType,
       params.estimatedOccupancy
     ],
@@ -284,6 +300,7 @@ export function useDashboardData() {
         cityName: params.cityName,
         cityCode: params.cityCode ?? undefined,
         countryCode: params.countryCode,
+        propertyId: params.propertyId,
         latitude: params.latitude,
         longitude: params.longitude,
         checkInDate: params.checkInDate,
@@ -291,7 +308,8 @@ export function useDashboardData() {
         adults: params.adults,
         hotelType: params.hotelType,
         estimatedOccupancy: params.estimatedOccupancy,
-        daysForward: 30
+        daysForward: 30,
+        useSuggestedCompset: params.useSuggestedCompset
       })
   });
 
@@ -302,13 +320,14 @@ export function useDashboardData() {
   });
 
   const historyQuery = useQuery({
-    queryKey: ["market-history", params.searchToken, params.cityName, params.countryCode],
+    queryKey: ["market-history", params.searchToken, params.cityName, params.countryCode, params.propertyId],
     enabled: params.searchToken > 0,
     staleTime: 60_000,
     queryFn: async () =>
       getMarketHistory({
         cityName: params.cityName,
         countryCode: params.countryCode,
+        propertyId: params.propertyId,
         days: 30
       })
   });
@@ -319,6 +338,7 @@ export function useDashboardData() {
       params.searchToken,
       params.cityName,
       params.countryCode,
+      params.propertyId,
       params.checkInDate,
       params.checkOutDate,
       params.directRate
@@ -329,9 +349,64 @@ export function useDashboardData() {
       getParitySummary({
         cityName: params.cityName,
         countryCode: params.countryCode,
+        propertyId: params.propertyId,
         checkInDate: params.checkInDate,
         checkOutDate: params.checkOutDate,
         directRate: params.directRate
+      })
+  });
+
+  const pmsHealthQuery = useQuery({
+    queryKey: ["pms-health"],
+    staleTime: 30_000,
+    queryFn: getPmsHealth
+  });
+
+  const supplyQuery = useQuery({
+    queryKey: ["str-supply", params.searchToken, params.cityName, params.countryCode, params.propertyId],
+    enabled: params.searchToken > 0,
+    staleTime: 60_000,
+    queryFn: async () =>
+      getStrSupply({
+        cityName: params.cityName,
+        countryCode: params.countryCode,
+        propertyId: params.propertyId,
+        latitude: params.latitude,
+        longitude: params.longitude,
+        daysForward: 30
+      })
+  });
+
+  const portfolioQuery = useQuery({
+    queryKey: ["portfolio-summary", params.searchToken],
+    enabled: params.searchToken > 0,
+    staleTime: 60_000,
+    queryFn: async () => getPortfolioSummary({ days: 30 })
+  });
+
+  const anomaliesQuery = useQuery({
+    queryKey: ["pace-anomalies", params.searchToken, params.cityName, params.countryCode, params.propertyId],
+    enabled: params.searchToken > 0,
+    staleTime: 60_000,
+    queryFn: async () =>
+      getPaceAnomalies({
+        cityName: params.cityName,
+        countryCode: params.countryCode,
+        propertyId: params.propertyId,
+        days: 45
+      })
+  });
+
+  const revenueQuery = useQuery({
+    queryKey: ["revenue-analytics", params.searchToken, params.cityName, params.countryCode, params.propertyId],
+    enabled: params.searchToken > 0,
+    staleTime: 60_000,
+    queryFn: async () =>
+      getRevenueAnalytics({
+        cityName: params.cityName,
+        countryCode: params.countryCode,
+        propertyId: params.propertyId,
+        days: 30
       })
   });
 
@@ -340,11 +415,24 @@ export function useDashboardData() {
 
     if (analysisQuery.error) details.push(toDashboardApiError("analysis", analysisQuery.error));
     if (usageSummaryQuery.error) details.push(toDashboardApiError("usage", usageSummaryQuery.error));
+    if (pmsHealthQuery.error) details.push(toDashboardApiError("pms", pmsHealthQuery.error));
+    if (supplyQuery.error && !isAnalysisRequiredError(supplyQuery.error)) {
+      details.push(toDashboardApiError("supply", supplyQuery.error));
+    }
+    if (portfolioQuery.error && !isAnalysisRequiredError(portfolioQuery.error)) {
+      details.push(toDashboardApiError("portfolio", portfolioQuery.error));
+    }
     if (historyQuery.error && !isAnalysisRequiredError(historyQuery.error)) {
       details.push(toDashboardApiError("history", historyQuery.error));
     }
     if (parityQuery.error && !isAnalysisRequiredError(parityQuery.error)) {
       details.push(toDashboardApiError("parity", parityQuery.error));
+    }
+    if (anomaliesQuery.error && !isAnalysisRequiredError(anomaliesQuery.error)) {
+      details.push(toDashboardApiError("anomalies", anomaliesQuery.error));
+    }
+    if (revenueQuery.error && !isAnalysisRequiredError(revenueQuery.error)) {
+      details.push(toDashboardApiError("revenue", revenueQuery.error));
     }
 
     if (!details.length) return null;
@@ -353,7 +441,17 @@ export function useDashboardData() {
       summary: "Something went wrong while loading API data.",
       details
     };
-  }, [analysisQuery.error, usageSummaryQuery.error, historyQuery.error, parityQuery.error]);
+  }, [
+    analysisQuery.error,
+    usageSummaryQuery.error,
+    pmsHealthQuery.error,
+    supplyQuery.error,
+    portfolioQuery.error,
+    historyQuery.error,
+    parityQuery.error,
+    anomaliesQuery.error,
+    revenueQuery.error
+  ]);
 
   const auxiliaryHints = useMemo(() => {
     const hints: string[] = [];
@@ -366,8 +464,16 @@ export function useDashboardData() {
       hints.push("Parity summary requires a compset snapshot for this exact date range. Run analysis for these dates.");
     }
 
+    if (isAnalysisRequiredError(anomaliesQuery.error)) {
+      hints.push("Pace anomalies appear after enough analysis runs are stored for this market.");
+    }
+
+    if (isAnalysisRequiredError(revenueQuery.error)) {
+      hints.push("Revenue analytics populate after at least one completed analysis run.");
+    }
+
     return hints;
-  }, [historyQuery.error, parityQuery.error]);
+  }, [historyQuery.error, parityQuery.error, anomaliesQuery.error, revenueQuery.error]);
 
   const fallbackModel = useMemo(() => createFallbackModel(params), [params]);
 
@@ -398,6 +504,24 @@ export function useDashboardData() {
     }
     return null;
   }, [parityQuery.data, parityQuery.error]);
+
+  const pmsHealth = useMemo<PmsHealthResponse | null>(() => pmsHealthQuery.data ?? null, [pmsHealthQuery.data]);
+  const supply = useMemo<StrSupplyResponse | null>(() => supplyQuery.data ?? null, [supplyQuery.data]);
+  const portfolio = useMemo<PortfolioSummaryResponse | null>(() => portfolioQuery.data ?? null, [portfolioQuery.data]);
+
+  const anomalies = useMemo<PaceAnomaliesResponse | null>(() => {
+    if (anomaliesQuery.data && !isAnalysisRequiredError(anomaliesQuery.error)) {
+      return anomaliesQuery.data;
+    }
+    return null;
+  }, [anomaliesQuery.data, anomaliesQuery.error]);
+
+  const revenueAnalytics = useMemo<RevenueAnalyticsResponse | null>(() => {
+    if (revenueQuery.data && !isAnalysisRequiredError(revenueQuery.error)) {
+      return revenueQuery.data;
+    }
+    return null;
+  }, [revenueQuery.data, revenueQuery.error]);
 
   const eventDates = useMemo(() => {
     if (analysisQuery.data?.eventDates) {
@@ -486,15 +610,16 @@ export function useDashboardData() {
     }
 
     return {
+      propertyId: params.propertyId,
       cityName: params.cityName,
       countryCode: params.countryCode,
       hotelType: params.hotelType,
       daysForward: 30,
       runMode: "fallback_first",
       phase: "phase2_wave1",
-      pmsMode: "simulated"
+      pmsMode: pmsHealthQuery.data?.activeMode ?? "simulated"
     };
-  }, [analysisQuery.data?.analysisContext, params.cityName, params.countryCode, params.hotelType]);
+  }, [analysisQuery.data?.analysisContext, params.propertyId, params.cityName, params.countryCode, params.hotelType, pmsHealthQuery.data?.activeMode]);
 
   const sourceHealth = useMemo<SourceHealthRow[]>(() => {
     if (analysisQuery.data?.sourceHealth?.length) {
@@ -552,10 +677,19 @@ export function useDashboardData() {
     apiError,
     warnings: [...(analysisQuery.data?.warnings ?? []), ...auxiliaryHints],
     analysisContext,
+    paceSource: analysisQuery.data?.paceSource ?? analysisContext.pmsMode,
+    pmsSyncAt: analysisQuery.data?.pmsSyncAt ?? null,
+    supplySource: analysisQuery.data?.supplySource ?? supplyQuery.data?.source ?? "fallback_proxy",
+    compsetSuggestionVersion: analysisQuery.data?.compsetSuggestionVersion ?? null,
     fallbacksUsed: analysisQuery.data?.fallbacksUsed ?? [],
     usageSummary: usageSummaryQuery.data,
     history,
     parity,
+    pmsHealth,
+    supply,
+    portfolio,
+    anomalies,
+    revenueAnalytics,
     hasRunAnalysis: params.searchToken > 0,
     eventDates,
     holidayDates,
@@ -568,7 +702,12 @@ export function useDashboardData() {
     isFetching:
       analysisQuery.isFetching ||
       usageSummaryQuery.isFetching ||
+      pmsHealthQuery.isFetching ||
+      supplyQuery.isFetching ||
+      portfolioQuery.isFetching ||
       historyQuery.isFetching ||
-      parityQuery.isFetching
+      parityQuery.isFetching ||
+      anomaliesQuery.isFetching ||
+      revenueQuery.isFetching
   };
 }

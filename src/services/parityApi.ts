@@ -5,6 +5,7 @@ import type { ParitySummaryResponse } from "../types/parity";
 export function getParitySummary(params: {
   cityName: string;
   countryCode: string;
+  propertyId?: string;
   checkInDate: string;
   checkOutDate: string;
   directRate: number;

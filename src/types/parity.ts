@@ -22,6 +22,7 @@ export interface ParityAlert {
 }
 
 export interface ParitySummaryResponse {
+  propertyId: string;
   marketKey: string;
   directRate: number;
   tolerancePct: number;

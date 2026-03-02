@@ -15,6 +15,7 @@ export interface MarketHistorySummary {
 }
 
 export interface MarketHistoryResponse {
+  propertyId: string;
   marketKey: string;
   windowDays: number;
   daily: MarketHistoryDailyPoint[];

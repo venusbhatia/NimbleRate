@@ -27,9 +27,13 @@ describe("usageBudget", () => {
   it("returns aggregate summary", () => {
     incrementProviderUsage("predicthq", 10);
     incrementProviderUsage("serpapi", 5);
+    incrementProviderUsage("amadeus_flights", 2);
     const summary = getUsageSummary();
     expect(summary.providers).toHaveLength(4);
     expect(summary.providers.some((provider) => provider.provider === "predicthq")).toBe(true);
     expect(summary.providers.some((provider) => provider.provider === "serpapi")).toBe(true);
+    expect(summary.providers.some((provider) => provider.provider === "amadeus_flights")).toBe(true);
+    expect(summary.providers.every((provider) => provider.provider !== "cloudbeds")).toBe(true);
+    expect(summary.providers.every((provider) => provider.provider !== "airdna")).toBe(true);
   });
 });

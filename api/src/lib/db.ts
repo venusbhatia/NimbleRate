@@ -85,6 +85,15 @@ export function getDatabasePath() {
   return databasePath;
 }
 
+function ensureColumn(table: string, column: string, definition: string) {
+  const columns = queryJson<{ name: string }>(`PRAGMA table_info(${table});`);
+  const hasColumn = columns.some((entry) => entry.name === column);
+
+  if (!hasColumn) {
+    executeSql(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+  }
+}
+
 export function initDatabase() {
   executeSql(`
     PRAGMA journal_mode = WAL;
@@ -118,10 +127,115 @@ export function initDatabase() {
       payload_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS analysis_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      analysis_run_id INTEGER NOT NULL,
+      property_id TEXT NOT NULL DEFAULT 'default',
+      market_key TEXT NOT NULL,
+      analysis_date TEXT NOT NULL,
+      recommended_rate REAL NOT NULL,
+      anchor_rate REAL NOT NULL,
+      occupancy_rate REAL NOT NULL,
+      final_multiplier REAL NOT NULL,
+      raw_multiplier REAL NOT NULL,
+      event_impact REAL NOT NULL DEFAULT 0,
+      weather_category TEXT NOT NULL DEFAULT 'cloudy',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (analysis_run_id) REFERENCES analysis_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS rate_push_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      property_id TEXT NOT NULL DEFAULT 'default',
+      market_key TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      idempotency_key TEXT,
+      requested_by TEXT NOT NULL DEFAULT 'operator',
+      requested_at TEXT NOT NULL,
+      approved_at TEXT,
+      completed_at TEXT,
+      rollback_job_id INTEGER,
+      notes TEXT,
+      payload_json TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS rate_push_job_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL,
+      rate_date TEXT NOT NULL,
+      target_rate REAL NOT NULL,
+      previous_rate REAL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      status TEXT NOT NULL,
+      external_reference TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 1,
+      message TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES rate_push_jobs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS properties (
+      property_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      country_code TEXT NOT NULL,
+      city_name TEXT NOT NULL,
+      lat REAL,
+      lon REAL,
+      hotel_type TEXT NOT NULL DEFAULT 'city',
+      total_rooms INTEGER NOT NULL DEFAULT 40,
+      channel_provider TEXT NOT NULL DEFAULT 'simulated',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_analysis_runs_market_requested
       ON analysis_runs(market_key, requested_at);
 
     CREATE INDEX IF NOT EXISTS idx_compset_city_collected_dates
       ON compset_snapshots(city, collected_at, check_in, check_out);
+
+    CREATE INDEX IF NOT EXISTS idx_analysis_daily_property_market_date
+      ON analysis_daily(property_id, market_key, analysis_date);
+
+    CREATE INDEX IF NOT EXISTS idx_analysis_daily_created_at
+      ON analysis_daily(created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_rate_push_jobs_property_requested
+      ON rate_push_jobs(property_id, requested_at);
+
+    CREATE INDEX IF NOT EXISTS idx_rate_push_items_job
+      ON rate_push_job_items(job_id);
+
+    CREATE INDEX IF NOT EXISTS idx_properties_city_country
+      ON properties(city_name, country_code);
+  `);
+
+  ensureColumn("compset_snapshots", "property_id", "TEXT NOT NULL DEFAULT 'default'");
+  ensureColumn("analysis_runs", "property_id", "TEXT NOT NULL DEFAULT 'default'");
+  ensureColumn("rate_push_jobs", "idempotency_key", "TEXT");
+  ensureColumn("rate_push_job_items", "external_reference", "TEXT");
+  ensureColumn("rate_push_job_items", "attempt_count", "INTEGER NOT NULL DEFAULT 1");
+
+  executeSql(`
+    CREATE INDEX IF NOT EXISTS idx_analysis_runs_property_market_requested
+      ON analysis_runs(property_id, market_key, requested_at);
+
+    CREATE INDEX IF NOT EXISTS idx_compset_property_city_collected_dates
+      ON compset_snapshots(property_id, city, collected_at, check_in, check_out);
+
+    CREATE INDEX IF NOT EXISTS idx_rate_push_jobs_property_mode_idempotency
+      ON rate_push_jobs(property_id, mode, idempotency_key);
+  `);
+
+  const nowIso = new Date().toISOString();
+  executeSql(`
+    INSERT INTO properties(
+      property_id, name, country_code, city_name, lat, lon, hotel_type, total_rooms, channel_provider, created_at, updated_at
+    )
+    VALUES (
+      'default', 'Default Property', 'US', 'Austin', 30.2672, -97.7431, 'city', 40, 'simulated', ${sqlQuote(nowIso)}, ${sqlQuote(nowIso)}
+    )
+    ON CONFLICT(property_id) DO NOTHING;
   `);
 }

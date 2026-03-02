@@ -1,11 +1,14 @@
 import { Building2, CalendarDays, DollarSign, HelpCircle, Loader2, MapPin, Play, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "../../components/ui/Card";
 import { useDebounce } from "../../hooks/useDebounce";
+import { getProperties } from "../../services/propertiesApi";
 import { geocodeCity } from "../../services/weatherApi";
 import { useSearchStore } from "../../store/useSearchStore";
 import type { HotelType } from "../../types/common";
 import type { LocationOption } from "../../types/location";
+import type { PropertyRecord } from "../../types/operations";
 import type { GeocodingResult } from "../../types/weather";
 import { majorLocations } from "./majorLocations";
 
@@ -189,14 +192,26 @@ function isHighConfidenceIntentMatch(
   return score >= 110;
 }
 
+function applyPropertyToSearch(property: PropertyRecord) {
+  return {
+    cityName: property.cityName,
+    cityCode: null as string | null,
+    countryCode: property.countryCode,
+    latitude: property.latitude ?? 0,
+    longitude: property.longitude ?? 0
+  };
+}
+
 export function SearchPanel() {
   const {
     cityName,
     countryCode,
+    propertyId,
     checkInDate,
     checkOutDate,
     adults,
     directRate,
+    useSuggestedCompset,
     hotelType,
     estimatedOccupancy,
     searchToken,
@@ -204,6 +219,8 @@ export function SearchPanel() {
     setDates,
     setAdults,
     setDirectRate,
+    setUseSuggestedCompset,
+    setPropertyId,
     setHotelType,
     setEstimatedOccupancy,
     runAnalysis
@@ -215,7 +232,16 @@ export function SearchPanel() {
   const [strictMatchIds, setStrictMatchIds] = useState<string[]>(majorLocations.slice(0, 16).map((location) => location.id));
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [citySearchError, setCitySearchError] = useState<string | null>(null);
+  const [manualPropertyId, setManualPropertyId] = useState(propertyId);
   const debouncedCityQuery = useDebounce(cityQuery, 350);
+  const propertiesQuery = useQuery({
+    queryKey: ["properties"],
+    staleTime: 60_000,
+    queryFn: getProperties
+  });
+  const properties = propertiesQuery.data?.properties ?? [];
+  const selectedManagedProperty = properties.find((property) => property.propertyId === propertyId) ?? null;
+  const usingManualProperty = !selectedManagedProperty;
 
   const strictMatchSet = useMemo(() => new Set(strictMatchIds), [strictMatchIds]);
 
@@ -238,6 +264,10 @@ export function SearchPanel() {
   useEffect(() => {
     setCityQuery([cityName, countryCode].filter(Boolean).join(", "));
   }, [cityName, countryCode]);
+
+  useEffect(() => {
+    setManualPropertyId(propertyId);
+  }, [propertyId]);
 
   useEffect(() => {
     const query = debouncedCityQuery.trim();
@@ -324,6 +354,16 @@ export function SearchPanel() {
     setIsSuggestionOpen(false);
   };
 
+  const applyManagedProperty = (property: PropertyRecord) => {
+    setPropertyId(property.propertyId);
+    setHotelType(property.hotelType);
+    if (property.latitude !== null && property.longitude !== null) {
+      const mapped = applyPropertyToSearch(property);
+      setCity(mapped);
+      setCityQuery([mapped.cityName, mapped.countryCode].filter(Boolean).join(", "));
+    }
+  };
+
   const handleCheckIn = (value: string) => {
     if (value > checkOutDate) {
       setDates(value, value);
@@ -339,7 +379,7 @@ export function SearchPanel() {
 
   return (
     <Card className="animate-fadeIn bg-white/95 p-6 dark:bg-neutral-900/95">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 lg:items-end">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-8 lg:items-end">
         <label className="relative space-y-2 lg:col-span-2">
           <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Building2 className="h-3.5 w-3.5" />
@@ -486,6 +526,50 @@ export function SearchPanel() {
         </label>
 
         <label className="space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Property ID</span>
+          <select
+            value={usingManualProperty ? "__manual__" : propertyId}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next === "__manual__") {
+                setPropertyId(manualPropertyId || "default");
+                return;
+              }
+              const selected = properties.find((property) => property.propertyId === next);
+              if (!selected) {
+                setPropertyId(next);
+                return;
+              }
+              applyManagedProperty(selected);
+            }}
+            className={inputClass}
+          >
+            {properties.map((property) => (
+              <option key={property.propertyId} value={property.propertyId}>
+                {property.name} ({property.propertyId})
+              </option>
+            ))}
+            <option value="__manual__">Manual property ID</option>
+          </select>
+          {usingManualProperty ? (
+            <input
+              type="text"
+              value={manualPropertyId}
+              onChange={(event) => {
+                const next = event.target.value;
+                setManualPropertyId(next);
+                setPropertyId(next);
+              }}
+              className={`${inputClass} mt-2`}
+              placeholder="default"
+            />
+          ) : null}
+          {propertiesQuery.isLoading ? (
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">Loading property registry…</p>
+          ) : null}
+        </label>
+
+        <label className="space-y-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Property Type</span>
           <select
             value={hotelType}
@@ -544,11 +628,22 @@ export function SearchPanel() {
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {searchToken > 0
-            ? `Analysis run #${searchToken}. Provider APIs are called only when you click run.`
-            : "No analysis run yet. Click Run Analysis to fetch live market data."}
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {searchToken > 0
+              ? `Analysis run #${searchToken}. Provider APIs are called only when you click run.`
+              : "No analysis run yet. Click Run Analysis to fetch live market data."}
+          </p>
+          <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={useSuggestedCompset}
+              onChange={(event) => setUseSuggestedCompset(event.target.checked)}
+              className="h-3.5 w-3.5 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+            />
+            Use suggested compset ranking on next run
+          </label>
+        </div>
         <button
           type="button"
           onClick={runAnalysis}

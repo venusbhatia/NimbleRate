@@ -49,6 +49,16 @@ pnpm dev
 pnpm dev:api
 ```
 
+5. Run checks:
+
+```bash
+pnpm lint
+pnpm test
+pnpm build
+pnpm --dir api test
+pnpm --dir api build
+```
+
 ## Team Workflow
 
 - Stable branch: `main`

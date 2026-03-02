@@ -8,7 +8,7 @@ on:
 
 jobs:
   frontend:
-    name: Frontend Lint & Build
+    name: Frontend Lint, Test & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -30,11 +30,14 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Test frontend
+        run: pnpm test
+
       - name: Build frontend
         run: pnpm build
 
   api:
-    name: API Build
+    name: API Test & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -53,6 +56,9 @@ jobs:
 
       - name: Install API dependencies
         run: pnpm --dir api install --frozen-lockfile
+
+      - name: Test API
+        run: pnpm --dir api test
 
       - name: Build API
         run: pnpm --dir api build

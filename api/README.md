@@ -29,6 +29,12 @@ Start API server:
 pnpm dev
 ```
 
+Run API tests:
+
+```bash
+pnpm test
+```
+
 ## Current Routes
 
 - `GET /api/health`
@@ -44,10 +50,3 @@ pnpm dev
 - `GET /api/holidays/countries`
 - `GET /api/weather/forecast`
 - `GET /api/weather/geocode`
-
-Then expose routes like:
-
-- `GET /api/hotels/offers`
-- `GET /api/events`
-- `GET /api/holidays`
-- `GET /api/weather`

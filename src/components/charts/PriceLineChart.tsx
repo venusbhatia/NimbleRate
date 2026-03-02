@@ -24,7 +24,7 @@ export function PriceLineChart({ data }: PriceLineChartProps) {
             <XAxis dataKey="dateLabel" hide />
             <YAxis width={56} tickFormatter={(value) => `$${Math.round(value)}`} />
             <Tooltip
-              formatter={(value: number) => [`$${value.toFixed(0)}`, "Recommended Rate"]}
+              formatter={(value) => [`$${Number(value ?? 0).toFixed(0)}`, "Recommended Rate"]}
               labelFormatter={(value) => `${value}`}
             />
             <Line

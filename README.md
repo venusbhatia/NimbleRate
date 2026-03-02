@@ -15,7 +15,7 @@ Zero-touch, hyper-local dynamic pricing that moves as fast as the market.
 1. Install dependencies:
 
 ```bash
-npm install
+pnpm install
 ```
 
 2. Add environment variables:
@@ -34,7 +34,7 @@ Set these keys in `.env.local`:
 3. Start dev server:
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ## Architecture

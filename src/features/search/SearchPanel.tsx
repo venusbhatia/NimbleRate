@@ -379,7 +379,7 @@ export function SearchPanel() {
 
   return (
     <Card className="animate-fadeIn bg-white/95 p-6 dark:bg-neutral-900/95">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-8 lg:items-end">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 lg:items-end">
         <label className="relative space-y-2 lg:col-span-2">
           <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Building2 className="h-3.5 w-3.5" />
@@ -508,7 +508,10 @@ export function SearchPanel() {
             ))}
           </select>
         </label>
+      </div>
 
+      <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Property Configuration</p>
+      <div className="mt-2 grid gap-4 md:grid-cols-3 lg:items-end">
         <label className="space-y-2">
           <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <DollarSign className="h-3.5 w-3.5" />

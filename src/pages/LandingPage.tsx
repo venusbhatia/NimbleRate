@@ -4,7 +4,8 @@ import {
   ArrowRight,
   Zap,
   TrendingUp,
-  Ticket
+  Ticket,
+  SearchCheck
 } from "lucide-react";
 import { Link } from "../router";
 import { LandingNav } from "../components/layout/LandingNav";
@@ -13,23 +14,30 @@ import logoSvg from "../assets/nimblerate_logo.svg";
 const features = [
   {
     icon: BarChart3,
-    title: "Market Intelligence",
+    title: "Compset Intelligence",
     description:
-      "See what competitors charge in your area. Real-time hotel rate data, so you never price blind.",
+      "Real-time competitor rate benchmarking across OTAs. Know exactly where you sit in your market \u2014 percentile band, median, and anchor rate.",
     color: "text-brand-emerald"
   },
   {
     icon: Zap,
     title: "Dynamic Pricing",
     description:
-      "Our algorithm blends occupancy, seasonality, and demand into one recommended rate — updated daily.",
+      "A 10-factor engine blends occupancy, seasonality, events, weather, holidays, lead time, search demand, travel intent, and more into one recommended rate.",
     color: "text-gold-500"
   },
   {
-    icon: Ticket,
-    title: "Event Awareness",
+    icon: TrendingUp,
+    title: "Demand Signals",
     description:
-      "Concerts, conferences, festivals — we detect nearby events that drive demand and adjust your price.",
+      "Search trends, flight booking intent, and university calendars feed directly into your pricing \u2014 so you catch demand surges before they peak.",
+    color: "text-emerald-500"
+  },
+  {
+    icon: Ticket,
+    title: "Event & Holiday Awareness",
+    description:
+      "PredictHQ\u2019s 20M+ event database detects concerts, conferences, festivals, and public holidays that drive demand near your property.",
     color: "text-violet-500"
   },
   {
@@ -38,6 +46,13 @@ const features = [
     description:
       "Sunny weekends fill beach hotels. Rainy days hurt city B&Bs. Weather is factored in automatically.",
     color: "text-sky-500"
+  },
+  {
+    icon: SearchCheck,
+    title: "Full Explainability",
+    description:
+      "Every rate recommendation comes with an auditable breakdown \u2014 see exactly which factors moved the price and by how much.",
+    color: "text-amber-500"
   }
 ];
 
@@ -51,19 +66,19 @@ const steps = [
     number: "02",
     title: "We crunch the data",
     description:
-      "Hotel rates, events, weather, holidays, and seasonality are combined into a single price recommendation."
+      "Compset rates, booking pace, events, weather, demand signals, and 10 pricing factors are combined into a market-anchored recommendation."
   },
   {
     number: "03",
     title: "Set your best price",
     description:
-      "See a 30-day rate calendar with daily recommendations. Copy, export, or just use it as a guide."
+      "See a 30-day rate calendar with daily recommendations and full explainability. Understand every factor behind each price."
   }
 ];
 
 const stats = [
   { value: "23%", label: "Average revenue uplift" },
-  { value: "7", label: "Pricing factors analysed" },
+  { value: "10", label: "Pricing factors analysed" },
   { value: "30", label: "Days of recommendations" },
   { value: "<1 min", label: "Time to first insight" }
 ];
@@ -173,7 +188,7 @@ export function LandingPage() {
       {/* ===== FEATURES ===== */}
       <section className="pb-24">
         <div className="mx-auto max-w-6xl px-6">
-          <div className="grid gap-8 sm:grid-cols-2">
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((feature, i) => {
               const Icon = feature.icon;
               return (

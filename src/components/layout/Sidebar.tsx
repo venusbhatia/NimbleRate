@@ -1,4 +1,4 @@
-import { CalendarRange, ChartNoAxesCombined, Cog, Home, Ticket, X } from "lucide-react";
+import { Activity, CalendarRange, ChartNoAxesCombined, Cog, Home, Ticket, X } from "lucide-react";
 import { useDashboardStore } from "../../store/useDashboardStore";
 import { Link } from "../../router";
 import { cn } from "../ui/cn";
@@ -8,6 +8,7 @@ const navItems = [
   { id: "dashboard", label: "Overview", description: "KPIs & rate calendar", icon: ChartNoAxesCombined },
   { id: "calendar", label: "Rate Trends", description: "Charts & forecasts", icon: CalendarRange },
   { id: "events", label: "Events", description: "What's happening nearby", icon: Ticket },
+  { id: "operations", label: "Operations", description: "Health, analytics & publishing", icon: Activity },
   { id: "settings", label: "Settings", description: "Property & search config", icon: Cog }
 ] as const;
 

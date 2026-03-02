@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 interface DashboardState {
-  activeNav: "dashboard" | "calendar" | "events" | "settings";
+  activeNav: "dashboard" | "calendar" | "events" | "operations" | "settings";
   theme: "light" | "dark";
   pricePeriod: 7 | 14 | 30;
   isMobileMenuOpen: boolean;

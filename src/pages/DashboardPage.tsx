@@ -167,7 +167,7 @@ export function DashboardPage() {
 
   const ratePushJobsQuery = useQuery({
     queryKey: ["rate-push-jobs", searchState.propertyId],
-    enabled: hasRunAnalysis && activeNav === "settings",
+    enabled: hasRunAnalysis && (activeNav === "operations" || activeNav === "settings"),
     staleTime: 10_000,
     queryFn: async () => listRatePushJobs({ propertyId: searchState.propertyId, limit: 25 })
   });
@@ -387,10 +387,7 @@ export function DashboardPage() {
           </div>
 
           <Card className="bg-white/95 dark:bg-neutral-900/95">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold tracking-tight">Demand Intent</h3>
-              <Badge tone="gold">Phase 2</Badge>
-            </div>
+            <h3 className="text-lg font-semibold tracking-tight">Demand Intent</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Search Momentum</p>
@@ -560,18 +557,83 @@ export function DashboardPage() {
         </>
       ) : null}
 
-      {activeNav === "events" ? <EventsList events={model.events} limit={Math.max(6, pricePeriod)} /> : null}
-
-      {activeNav === "settings" ? (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
-            <h2 className="mb-1 text-lg font-bold tracking-tight">Property Settings</h2>
-            <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
-              Configure your location, property type, and occupancy to get accurate pricing recommendations.
-            </p>
-            <SearchPanel />
+      {activeNav === "events" ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Total Events
+              </p>
+              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">
+                {model.events.length}
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                In your {pricePeriod}-day window
+              </p>
+            </Card>
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                High-Impact Days
+              </p>
+              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">
+                {model.insights.signals.highDemandDays}
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Days with demand spike potential
+              </p>
+            </Card>
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Event Days
+              </p>
+              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">
+                {model.insights.signals.eventDays}
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Days with nearby events detected
+              </p>
+            </Card>
           </div>
 
+          <Card className="bg-white/95 dark:bg-neutral-900/95">
+            <h3 className="text-lg font-semibold tracking-tight">Market Signals Context</h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              How events combine with other demand signals in your market.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Search Momentum</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.searchMomentumIndex}<span className="text-sm font-medium text-gray-500">/100</span>
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Flight Demand</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.flightDemandIndex}<span className="text-sm font-medium text-gray-500">/100</span>
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Holiday Days</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.holidayDays}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Weather Risk Days</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.weatherRiskDays}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <EventsList events={model.events} limit={Math.max(6, pricePeriod)} />
+        </>
+      ) : null}
+
+      {activeNav === "operations" ? (
+        <div className="space-y-6">
           <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
             <h3 className="text-lg font-bold tracking-tight">Source Health</h3>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Live status of Hotels, Events, Holidays, Weather, Trends, Flights, PMS, and University pipelines.</p>
@@ -629,7 +691,7 @@ export function DashboardPage() {
                 </p>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {supply
-                    ? `Fallback Proxy • ${supply.trend}`
+                    ? `Fallback Proxy \u2022 ${supply.trend}`
                     : "Run analysis to refresh supply pressure."}
                 </p>
                 <div className="mt-1">
@@ -645,31 +707,31 @@ export function DashboardPage() {
                 </p>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {portfolio
-                    ? `ADR $${safeNumber(portfolio.totals.adrAvg).toFixed(0)} • RevPAR $${safeNumber(portfolio.totals.revparAvg).toFixed(0)}`
+                    ? `ADR $${safeNumber(portfolio.totals.adrAvg).toFixed(0)} \u2022 RevPAR $${safeNumber(portfolio.totals.revparAvg).toFixed(0)}`
                     : "Portfolio rollup appears after analysis history exists."}
                 </p>
               </div>
             </div>
 
-	            <div className="mt-4 grid gap-3 md:grid-cols-2">
-	              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Revenue Analytics</p>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                   {revenueAnalytics
-                    ? `ADR trend ${safeNumber(revenueAnalytics.summary.adrTrendPct).toFixed(1)}% • RevPAR trend ${safeNumber(revenueAnalytics.summary.revparTrendPct).toFixed(1)}%`
+                    ? `ADR trend ${safeNumber(revenueAnalytics.summary.adrTrendPct).toFixed(1)}% \u2022 RevPAR trend ${safeNumber(revenueAnalytics.summary.revparTrendPct).toFixed(1)}%`
                     : "Run analysis to build ADR/RevPAR trend analytics."}
                 </p>
               </div>
               <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Pace Anomalies</p>
-	                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-	                  {anomalies
-	                    ? `${anomalies.anomalies.length} anomaly ${anomalies.anomalies.length === 1 ? "flag" : "flags"} in ${anomalies.windowDays} days`
-	                    : "No anomaly baseline yet. Build history with repeated analysis runs."}
-	                </p>
-	              </div>
-	            </div>
-	          </div>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                  {anomalies
+                    ? `${anomalies.anomalies.length} anomaly ${anomalies.anomalies.length === 1 ? "flag" : "flags"} in ${anomalies.windowDays} days`
+                    : "No anomaly baseline yet. Build history with repeated analysis runs."}
+                </p>
+              </div>
+            </div>
+          </div>
 
           <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
             <h3 className="text-lg font-bold tracking-tight">Rate Publish Console</h3>
@@ -751,6 +813,75 @@ export function DashboardPage() {
                 </p>
               </div>
             ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+            <h3 className="text-lg font-bold tracking-tight">Provider Usage & Budgets</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Track external API calls and rotate credentials/accounts when nearing quota limits.
+            </p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <th className="px-3 py-2">Provider</th>
+                    <th className="px-3 py-2">Used</th>
+                    <th className="px-3 py-2">Remaining</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Guidance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {providerUsageRows.length ? (
+                    providerUsageRows.map((row) => {
+                      const status = computeQuotaState(row);
+                      return (
+                        <tr key={row.provider} className="border-t border-gray-100 dark:border-gray-800">
+                          <td className="px-3 py-2 font-medium uppercase">{row.provider}</td>
+                          <td className="px-3 py-2 tabular-nums">
+                            {safeNumber(row.calls)}/{safeNumber(row.quota)} ({safeNumber(row.percentUsed).toFixed(1)}%)
+                          </td>
+                          <td className="px-3 py-2 tabular-nums">{safeNumber(row.remaining)}</td>
+                          <td className="px-3 py-2">
+                            <Badge tone={quotaTone(status)} className="uppercase">
+                              {status}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.recommendation}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="px-3 py-3 text-gray-500 dark:text-gray-400" colSpan={5}>
+                        Usage counters will appear after the first analysis call.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {isMakcorpsDegraded ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-700/40 dark:bg-amber-900/20">
+              <h3 className="text-lg font-bold tracking-tight text-amber-900 dark:text-amber-200">Makcorps Diagnostics Recommended</h3>
+              <p className="mt-2 text-sm text-amber-800 dark:text-amber-300">
+                Compset is running on fallback. Check diagnostics at <code>/api/providers/makcorps/diagnostics</code> for the latest recommended mode and endpoint access details.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {activeNav === "settings" ? (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+            <h2 className="mb-1 text-lg font-bold tracking-tight">Property Settings</h2>
+            <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
+              Configure your location, property type, and occupancy to get accurate pricing recommendations.
+            </p>
+            <SearchPanel />
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
@@ -890,65 +1021,6 @@ export function DashboardPage() {
               </div>
             </div>
           </div>
-
-          {isMakcorpsDegraded ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-700/40 dark:bg-amber-900/20">
-              <h3 className="text-lg font-bold tracking-tight text-amber-900 dark:text-amber-200">Makcorps Diagnostics Recommended</h3>
-              <p className="mt-2 text-sm text-amber-800 dark:text-amber-300">
-                Compset is running on fallback. Check diagnostics at <code>/api/providers/makcorps/diagnostics</code> for the latest recommended mode and endpoint access details.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
-            <h3 className="text-lg font-bold tracking-tight">Provider Usage & Budgets</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Track external API calls and rotate credentials/accounts when nearing quota limits.
-            </p>
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    <th className="px-3 py-2">Provider</th>
-                    <th className="px-3 py-2">Used</th>
-                    <th className="px-3 py-2">Remaining</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Guidance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {providerUsageRows.length ? (
-                    providerUsageRows.map((row) => {
-                      const status = computeQuotaState(row);
-                      return (
-                        <tr key={row.provider} className="border-t border-gray-100 dark:border-gray-800">
-                          <td className="px-3 py-2 font-medium uppercase">{row.provider}</td>
-                          <td className="px-3 py-2 tabular-nums">
-                            {safeNumber(row.calls)}/{safeNumber(row.quota)} ({safeNumber(row.percentUsed).toFixed(1)}%)
-                          </td>
-                          <td className="px-3 py-2 tabular-nums">{safeNumber(row.remaining)}</td>
-                          <td className="px-3 py-2">
-                            <Badge tone={quotaTone(status)} className="uppercase">
-                              {status}
-                            </Badge>
-                          </td>
-                          <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.recommendation}</td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr className="border-t border-gray-100 dark:border-gray-800">
-                      <td className="px-3 py-3 text-gray-500 dark:text-gray-400" colSpan={5}>
-                        Usage counters will appear after the first analysis call.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <ParitySummaryCard parity={parity} directRate={directRate} />
         </div>
       ) : null}
     </div>

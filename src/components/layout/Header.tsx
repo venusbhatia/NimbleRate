@@ -7,6 +7,7 @@ const sectionLabels: Record<string, string> = {
   dashboard: "Overview",
   calendar: "Rate Trends",
   events: "Events",
+  operations: "Operations",
   settings: "Settings"
 };
 

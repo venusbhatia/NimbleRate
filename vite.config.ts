@@ -5,6 +5,10 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    watch: {
+      // Avoid full-page reloads when SQLite files update from backend analysis writes.
+      ignored: ["**/api/data/**", "**/api/.env.local*"]
+    },
     proxy: {
       "/api": {
         target: "http://localhost:8787",

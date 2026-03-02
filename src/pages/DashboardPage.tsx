@@ -26,6 +26,22 @@ import { confidenceTone, formatCompsetDelta, percentileBandLabel } from "../util
 import type { DateExplainability } from "../types/dashboard";
 import { computeQuotaState, fallbackLabel, quotaTone } from "../utils/dashboardStatus";
 
+function safeNumber(value: unknown, fallback = 0): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function formatDateSafe(value: string | null | undefined, pattern: string): string {
+  if (!value) {
+    return "Date unavailable";
+  }
+  const parsed = parseISO(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    return "Date unavailable";
+  }
+  return format(parsed, pattern);
+}
+
 function factorLabel(key: keyof DateExplainability["factors"]) {
   switch (key) {
     case "occupancyRate":
@@ -107,18 +123,27 @@ export function DashboardPage() {
     cityName: "Austin"
   });
 
-  const anchorRecommendation = model.pricing[0];
-  const scopedPricing = model.pricing.slice(0, pricePeriod);
+  const safePricing = model.pricing
+    .filter((entry) => Boolean(entry?.date))
+    .map((entry) => ({
+      ...entry,
+      baseRate: safeNumber(entry.baseRate, 0),
+      finalRate: safeNumber(entry.finalRate, 0),
+      finalMultiplier: safeNumber(entry.finalMultiplier, 1),
+      rawMultiplier: safeNumber(entry.rawMultiplier, 1)
+    }));
+  const anchorRecommendation = safePricing[0];
+  const scopedPricing = safePricing.slice(0, pricePeriod);
   const providerUsageRows = usageSummary?.providers ?? model.providerUsage;
   const compsetRates = model.compset.hotels
     .flatMap((hotel) => hotel.otaRates.map((rate) => rate.rate))
     .filter((rate) => Number.isFinite(rate) && rate > 0);
-  const chartRates = compsetRates.length ? compsetRates : [model.marketAnchor.compsetMedian];
+  const chartRates = compsetRates.length ? compsetRates : [safeNumber(model.marketAnchor.compsetMedian, 0)];
 
   const activeSelectedDate =
-    selectedDate && model.pricing.some((entry) => entry.date === selectedDate)
+    selectedDate && safePricing.some((entry) => entry.date === selectedDate)
       ? selectedDate
-      : model.pricing[0]?.date ?? null;
+      : safePricing[0]?.date ?? null;
 
   const selectedExplainability = activeSelectedDate
     ? explainabilityByDate.get(activeSelectedDate) ?? null
@@ -210,7 +235,7 @@ export function DashboardPage() {
   });
 
   const triggerRatePush = () => {
-    const baseRates = model.pricing.slice(0, 7).map((day) => ({
+    const baseRates = safePricing.slice(0, 7).map((day) => ({
       date: day.date,
       rate: Number(day.finalRate.toFixed(2)),
       currency: "USD"
@@ -408,7 +433,7 @@ export function DashboardPage() {
           <div className="grid gap-6 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <PriceHeatmap
-                pricing={model.pricing}
+                pricing={safePricing}
                 eventDates={eventDates}
                 holidayDates={holidayDates}
                 longWeekendDates={longWeekendDates}
@@ -424,8 +449,8 @@ export function DashboardPage() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold tracking-tight">Date Explainability</h3>
                   {activeSelectedDate ? (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {format(parseISO(activeSelectedDate), "MMM d, yyyy")}
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatDateSafe(activeSelectedDate, "MMM d, yyyy")}
                     </span>
                   ) : null}
                 </div>
@@ -492,7 +517,7 @@ export function DashboardPage() {
       {activeNav === "calendar" ? (
         <>
           <PriceHeatmap
-            pricing={model.pricing}
+            pricing={safePricing}
             eventDates={eventDates}
             holidayDates={holidayDates}
             longWeekendDates={longWeekendDates}
@@ -511,19 +536,19 @@ export function DashboardPage() {
               <div className="mt-3 grid gap-2 text-sm text-gray-600 sm:grid-cols-2 dark:text-gray-300">
                 <p>
                   Avg recommended rate:{" "}
-                  <span className="font-semibold tabular-nums">${history.summary.recommendedAvg.toFixed(0)}</span>
+                  <span className="font-semibold tabular-nums">${safeNumber(history.summary.recommendedAvg).toFixed(0)}</span>
                 </p>
                 <p>
                   Recommended trend:{" "}
-                  <span className="font-semibold tabular-nums">{history.summary.recommendedTrendPct.toFixed(1)}%</span>
+                  <span className="font-semibold tabular-nums">{safeNumber(history.summary.recommendedTrendPct).toFixed(1)}%</span>
                 </p>
                 <p>
                   Avg compset median:{" "}
-                  <span className="font-semibold tabular-nums">${history.summary.compsetAvg.toFixed(0)}</span>
+                  <span className="font-semibold tabular-nums">${safeNumber(history.summary.compsetAvg).toFixed(0)}</span>
                 </p>
                 <p>
                   Volatility:{" "}
-                  <span className="font-semibold tabular-nums">{history.summary.volatilityPct.toFixed(1)}%</span>
+                  <span className="font-semibold tabular-nums">{safeNumber(history.summary.volatilityPct).toFixed(1)}%</span>
                 </p>
               </div>
             </Card>
@@ -620,7 +645,7 @@ export function DashboardPage() {
                 </p>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {portfolio
-                    ? `ADR $${portfolio.totals.adrAvg.toFixed(0)} • RevPAR $${portfolio.totals.revparAvg.toFixed(0)}`
+                    ? `ADR $${safeNumber(portfolio.totals.adrAvg).toFixed(0)} • RevPAR $${safeNumber(portfolio.totals.revparAvg).toFixed(0)}`
                     : "Portfolio rollup appears after analysis history exists."}
                 </p>
               </div>
@@ -631,7 +656,7 @@ export function DashboardPage() {
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Revenue Analytics</p>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                   {revenueAnalytics
-                    ? `ADR trend ${revenueAnalytics.summary.adrTrendPct.toFixed(1)}% • RevPAR trend ${revenueAnalytics.summary.revparTrendPct.toFixed(1)}%`
+                    ? `ADR trend ${safeNumber(revenueAnalytics.summary.adrTrendPct).toFixed(1)}% • RevPAR trend ${safeNumber(revenueAnalytics.summary.revparTrendPct).toFixed(1)}%`
                     : "Run analysis to build ADR/RevPAR trend analytics."}
                 </p>
               </div>
@@ -899,9 +924,9 @@ export function DashboardPage() {
                         <tr key={row.provider} className="border-t border-gray-100 dark:border-gray-800">
                           <td className="px-3 py-2 font-medium uppercase">{row.provider}</td>
                           <td className="px-3 py-2 tabular-nums">
-                            {row.calls}/{row.quota} ({row.percentUsed.toFixed(1)}%)
+                            {safeNumber(row.calls)}/{safeNumber(row.quota)} ({safeNumber(row.percentUsed).toFixed(1)}%)
                           </td>
-                          <td className="px-3 py-2 tabular-nums">{row.remaining}</td>
+                          <td className="px-3 py-2 tabular-nums">{safeNumber(row.remaining)}</td>
                           <td className="px-3 py-2">
                             <Badge tone={quotaTone(status)} className="uppercase">
                               {status}

@@ -58,6 +58,10 @@ function stringifyRawError(value: unknown): string {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
 function toDashboardApiError(source: DashboardApiErrorSource, error: unknown): DashboardApiErrorDetail {
   if (error instanceof ApiError) {
     const detailsMessage =
@@ -478,16 +482,70 @@ export function useDashboardData() {
   const fallbackModel = useMemo(() => createFallbackModel(params), [params]);
 
   const model = useMemo<DashboardModel>(() => {
-    if (!analysisQuery.data) {
+    if (!analysisQuery.data || !isRecord(analysisQuery.data.model)) {
       return {
         ...fallbackModel,
         providerUsage: usageSummaryQuery.data?.providers ?? fallbackModel.providerUsage
       };
     }
 
+    const candidate = analysisQuery.data.model as Partial<DashboardModel>;
+    const safePricing = Array.isArray(candidate.pricing) ? candidate.pricing : fallbackModel.pricing;
+    const safeEvents = Array.isArray(candidate.events) ? candidate.events : fallbackModel.events;
+    const safeWeather = Array.isArray(candidate.weather) ? candidate.weather : fallbackModel.weather;
+    const safeProviderUsage = usageSummaryQuery.data?.providers ?? (Array.isArray(candidate.providerUsage) ? candidate.providerUsage : fallbackModel.providerUsage);
+    const safeActions = Array.isArray(candidate.insights?.actions) ? candidate.insights.actions : fallbackModel.insights.actions;
+    const safeCompsetHotels = Array.isArray(candidate.compset?.hotels) ? candidate.compset.hotels : fallbackModel.compset.hotels;
+
     return {
-      ...analysisQuery.data.model,
-      providerUsage: usageSummaryQuery.data?.providers ?? analysisQuery.data.model.providerUsage
+      ...fallbackModel,
+      ...candidate,
+      pricing: safePricing,
+      events: safeEvents,
+      weather: safeWeather,
+      providerUsage: safeProviderUsage,
+      kpis: {
+        ...fallbackModel.kpis,
+        ...(isRecord(candidate.kpis) ? candidate.kpis : {})
+      },
+      marketAnchor: {
+        ...fallbackModel.marketAnchor,
+        ...(isRecord(candidate.marketAnchor) ? candidate.marketAnchor : {})
+      },
+      compsetPosition: {
+        ...fallbackModel.compsetPosition,
+        ...(isRecord(candidate.compsetPosition) ? candidate.compsetPosition : {})
+      },
+      recommendationConfidence: {
+        ...fallbackModel.recommendationConfidence,
+        ...(isRecord(candidate.recommendationConfidence) ? candidate.recommendationConfidence : {})
+      },
+      compset: {
+        ...fallbackModel.compset,
+        ...(isRecord(candidate.compset) ? candidate.compset : {}),
+        hotels: safeCompsetHotels,
+        summary: {
+          ...fallbackModel.compset.summary,
+          ...(isRecord(candidate.compset?.summary) ? candidate.compset.summary : {})
+        }
+      },
+      insights: {
+        ...fallbackModel.insights,
+        ...(isRecord(candidate.insights) ? candidate.insights : {}),
+        demand: {
+          ...fallbackModel.insights.demand,
+          ...(isRecord(candidate.insights?.demand) ? candidate.insights.demand : {})
+        },
+        dataQuality: {
+          ...fallbackModel.insights.dataQuality,
+          ...(isRecord(candidate.insights?.dataQuality) ? candidate.insights.dataQuality : {})
+        },
+        actions: safeActions,
+        signals: {
+          ...fallbackModel.insights.signals,
+          ...(isRecord(candidate.insights?.signals) ? candidate.insights.signals : {})
+        }
+      }
     };
   }, [analysisQuery.data, fallbackModel, usageSummaryQuery.data?.providers]);
 

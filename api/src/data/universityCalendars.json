@@ -1,0 +1,53 @@
+[
+  {
+    "marketKey": "austin-us",
+    "events": [
+      {
+        "name": "UT Austin Spring Graduation",
+        "startDate": "2026-05-20",
+        "endDate": "2026-05-24",
+        "impact": "high"
+      },
+      {
+        "name": "UT Austin Move-In Week",
+        "startDate": "2026-08-19",
+        "endDate": "2026-08-25",
+        "impact": "medium"
+      },
+      {
+        "name": "UT Homecoming Weekend",
+        "startDate": "2026-10-22",
+        "endDate": "2026-10-25",
+        "impact": "high"
+      }
+    ]
+  },
+  {
+    "marketKey": "new-york-us",
+    "events": [
+      {
+        "name": "Columbia University Graduation",
+        "startDate": "2026-05-18",
+        "endDate": "2026-05-21",
+        "impact": "high"
+      },
+      {
+        "name": "NYU Fall Move-In",
+        "startDate": "2026-08-24",
+        "endDate": "2026-08-30",
+        "impact": "medium"
+      }
+    ]
+  },
+  {
+    "marketKey": "london-gb",
+    "events": [
+      {
+        "name": "UCL Graduation Ceremonies",
+        "startDate": "2026-06-28",
+        "endDate": "2026-07-03",
+        "impact": "medium"
+      }
+    ]
+  }
+]

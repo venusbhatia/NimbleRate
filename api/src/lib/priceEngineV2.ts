@@ -10,6 +10,9 @@ export interface EngineSignalInput {
   eventImpactScore: number;
   isHoliday: boolean;
   isLongWeekend: boolean;
+  searchDemandMultiplier: number;
+  travelIntentMultiplier: number;
+  campusDemandMultiplier: number;
   pace: PacePoint;
 }
 
@@ -21,6 +24,9 @@ export interface EngineFactorBreakdown {
   weather: number;
   holiday: number;
   leadTime: number;
+  searchDemand: number;
+  travelIntent: number;
+  campusDemand: number;
 }
 
 export interface EngineExplainabilityFactor {
@@ -45,6 +51,9 @@ export interface EngineExplainability {
     weather: EngineExplainabilityFactor;
     holiday: EngineExplainabilityFactor;
     leadTime: EngineExplainabilityFactor;
+    searchDemand: EngineExplainabilityFactor;
+    travelIntent: EngineExplainabilityFactor;
+    campusDemand: EngineExplainabilityFactor;
   };
   guardrails: EngineGuardrails;
 }
@@ -80,6 +89,10 @@ export interface EngineOutput {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function sanitizeMultiplier(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function average(values: number[]) {
@@ -269,6 +282,26 @@ function describeLeadTimeFactor(multiplier: number, date: string) {
   return `Lead time (${daysOut} days out) is neutral.`;
 }
 
+function describeSearchDemandFactor(multiplier: number) {
+  if (multiplier >= 1.1) return "Destination search demand is materially above baseline.";
+  if (multiplier >= 1.03) return "Destination search demand is moderately elevated.";
+  if (multiplier <= 0.95) return "Destination search demand softened versus baseline.";
+  return "Destination search demand is near baseline.";
+}
+
+function describeTravelIntentFactor(multiplier: number) {
+  if (multiplier >= 1.1) return "Flight pricing and offer activity indicate strong inbound travel intent.";
+  if (multiplier >= 1.03) return "Flight data indicates modest inbound demand momentum.";
+  if (multiplier <= 0.95) return "Flight data suggests softer inbound travel intent.";
+  return "Flight demand signals are neutral.";
+}
+
+function describeCampusDemandFactor(multiplier: number) {
+  if (multiplier >= 1.1) return "Major university events are driving local demand pressure.";
+  if (multiplier >= 1.05) return "University calendar events are contributing to demand.";
+  return "University calendar impact is neutral for this date.";
+}
+
 function computeContributionMap(factors: EngineFactorBreakdown) {
   const entries = Object.entries(factors) as Array<[keyof EngineFactorBreakdown, number]>;
   const logs = entries.map(([key, value]) => [key, Math.log(Math.max(value, 0.0001))] as const);
@@ -296,7 +329,10 @@ function topContributionLabel(contributions: Map<keyof EngineFactorBreakdown, nu
     events: "events",
     weather: "weather",
     holiday: "holiday effects",
-    leadTime: "lead time"
+    leadTime: "lead time",
+    searchDemand: "search demand",
+    travelIntent: "travel intent",
+    campusDemand: "university demand"
   };
 
   let winner: keyof EngineFactorBreakdown = "occupancyRate";
@@ -332,6 +368,9 @@ function buildReasons(signal: EngineSignalInput, factors: EngineFactorBreakdown)
   if (factors.occupancyRate > 1.1) reasons.push("Booking pace and occupancy are ahead of baseline.");
   if (factors.occupancyRate < 0.95) reasons.push("Soft booking pace triggered defensive pricing.");
   if (factors.weather < 0.98) reasons.push("Weather risk reduced price pressure.");
+  if (factors.searchDemand > 1.03) reasons.push("Destination search interest is rising.");
+  if (factors.travelIntent > 1.03) reasons.push("Flight demand signals indicate stronger inbound intent.");
+  if (factors.campusDemand > 1.03) reasons.push("University calendar demand uplift applied.");
   if (!reasons.length) reasons.push("Market baseline conditions.");
   return reasons;
 }
@@ -359,7 +398,10 @@ export function calculateV2Recommendations(input: EngineInput): EngineOutput {
       events: getEventMultiplier(signal.eventImpactScore),
       weather: getWeatherMultiplier(signal.weatherCategory, input.hotelType),
       holiday: getHolidayMultiplier(signal.isHoliday, signal.isLongWeekend),
-      leadTime: getLeadTimeMultiplier(signal.date)
+      leadTime: getLeadTimeMultiplier(signal.date),
+      searchDemand: sanitizeMultiplier(signal.searchDemandMultiplier),
+      travelIntent: sanitizeMultiplier(signal.travelIntentMultiplier),
+      campusDemand: sanitizeMultiplier(signal.campusDemandMultiplier)
     };
 
     const rawMultiplier =
@@ -369,7 +411,10 @@ export function calculateV2Recommendations(input: EngineInput): EngineOutput {
       factors.events *
       factors.weather *
       factors.holiday *
-      factors.leadTime;
+      factors.leadTime *
+      factors.searchDemand *
+      factors.travelIntent *
+      factors.campusDemand;
 
     const dampened = dampen(rawMultiplier);
     const uncappedRate = anchorRate * dampened;
@@ -421,6 +466,21 @@ export function calculateV2Recommendations(input: EngineInput): EngineOutput {
           value: factors.leadTime,
           contribution: contributions.get("leadTime") ?? 0,
           reason: describeLeadTimeFactor(factors.leadTime, signal.date)
+        },
+        searchDemand: {
+          value: factors.searchDemand,
+          contribution: contributions.get("searchDemand") ?? 0,
+          reason: describeSearchDemandFactor(factors.searchDemand)
+        },
+        travelIntent: {
+          value: factors.travelIntent,
+          contribution: contributions.get("travelIntent") ?? 0,
+          reason: describeTravelIntentFactor(factors.travelIntent)
+        },
+        campusDemand: {
+          value: factors.campusDemand,
+          contribution: contributions.get("campusDemand") ?? 0,
+          reason: describeCampusDemandFactor(factors.campusDemand)
         }
       },
       guardrails

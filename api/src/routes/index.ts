@@ -8,8 +8,12 @@ import { executeSql, sqlQuote } from "../lib/db.js";
 import { generatePaceSimulation } from "../lib/paceSimulator.js";
 import { calculateV2Recommendations, summarizeRates, type V2WeatherCategory } from "../lib/priceEngineV2.js";
 import { buildUrl, fetchJsonCached, RequestValidationError, toApiError } from "../lib/http.js";
+import { resolvePmsPace } from "../lib/pms/adapter.js";
+import { getAmadeusFlightDemandSignal, type FlightDemandSignal } from "../lib/providers/amadeusFlightDemand.js";
 import { searchMakcorpsCompset, getMakcorpsHotelRates, diagnoseMakcorpsCompset } from "../lib/providers/makcorps.js";
 import { searchPredictHQEvents } from "../lib/providers/predicthq.js";
+import { getSerpApiTrendsSignal, type TrendsSignal } from "../lib/providers/serpapiTrends.js";
+import { getUniversityDemandSignal } from "../lib/universityDemand.js";
 import { getUsageSummary } from "../lib/usageBudget.js";
 import {
   validateQuery,
@@ -131,6 +135,7 @@ const predictHqSchema = z.object({
 
 const marketAnalysisSchema = z.object({
   cityName: zOptionalString,
+  cityCode: zOptionalString,
   countryCode: zRequiredString,
   latitude: zRequiredString,
   longitude: zRequiredString,
@@ -569,6 +574,7 @@ export function registerRoutes(app: Express) {
       const params = validateQuery(req, marketAnalysisSchema);
 
       const cityName = params.cityName ?? config.demoCity;
+      const cityCode = params.cityCode?.trim().toUpperCase() || null;
       const latitude = Number(params.latitude);
       const longitude = Number(params.longitude);
       const hotelType = (params.hotelType ?? "city") as "city" | "business" | "leisure" | "beach" | "ski";
@@ -587,11 +593,18 @@ export function registerRoutes(app: Express) {
 
       const warnings: string[] = [];
       const fallbacksUsed = new Set<string>();
-      const sourceDiagnostics: Record<"Hotels" | "Events" | "Holidays" | "Weather", SourceHealthDiagnostics> = {
+      const sourceDiagnostics: Record<
+        "Hotels" | "Events" | "Holidays" | "Weather" | "Trends" | "Flights" | "PMS" | "University",
+        SourceHealthDiagnostics
+      > = {
         Hotels: { degraded: false, errors: [], hasData: false },
         Events: { degraded: false, errors: [], hasData: false },
         Holidays: { degraded: false, errors: [], hasData: false },
-        Weather: { degraded: false, errors: [], hasData: false }
+        Weather: { degraded: false, errors: [], hasData: false },
+        Trends: { degraded: false, errors: [], hasData: false },
+        Flights: { degraded: false, errors: [], hasData: false },
+        PMS: { degraded: false, errors: [], hasData: false },
+        University: { degraded: false, errors: [], hasData: false }
       };
       let compsetSource: "makcorps" | "amadeus" | "fallback" = "fallback";
 
@@ -704,13 +717,21 @@ export function registerRoutes(app: Express) {
 
       saveCompsetSnapshot(cityName, params.checkInDate, params.checkOutDate, flattenedCompset);
 
-      const paceRows = generatePaceSimulation({
-        totalRooms,
+      const pmsResult = await resolvePmsPace({
+        cityName,
+        checkInDate: params.checkInDate,
         daysForward,
         hotelType,
-        seed: `${cityName}-${params.countryCode}-${params.checkInDate}`,
-        startDate: params.checkInDate
+        totalRooms,
+        seed: `${cityName}-${params.countryCode}-${params.checkInDate}`
       });
+      const paceRows = pmsResult.pace;
+      sourceDiagnostics.PMS.hasData = paceRows.length > 0;
+      if (pmsResult.fallbackUsed && pmsResult.fallbackFlag) {
+        sourceDiagnostics.PMS.degraded = true;
+        sourceDiagnostics.PMS.errors.push(pmsResult.healthMessage);
+        fallbacksUsed.add(pmsResult.fallbackFlag);
+      }
       const paceByDate = new Map(paceRows.map((entry) => [entry.date, entry]));
 
       const holidayYears = new Set([parseISO(params.checkInDate).getFullYear(), parseISO(endDate).getFullYear()]);
@@ -863,12 +884,87 @@ export function registerRoutes(app: Express) {
         }
       }
 
+      let trendsSignal: TrendsSignal = {
+        current7dAvg: 0,
+        baseline28dAvg: 0,
+        momentumRatio: 1,
+        searchMomentumIndex: 50,
+        searchDemandMultiplier: 1,
+        source: "fallback" as const
+      };
+
+      try {
+        trendsSignal = await getSerpApiTrendsSignal({
+          cityName,
+          countryCode: params.countryCode
+        });
+        sourceDiagnostics.Trends.hasData = true;
+        if (trendsSignal.source === "fallback") {
+          sourceDiagnostics.Trends.degraded = true;
+          sourceDiagnostics.Trends.errors.push("Google Trends payload was incomplete; using neutral fallback.");
+          fallbacksUsed.add("trends_fallback_neutral");
+        }
+      } catch (error) {
+        const message = `Google Trends unavailable: ${toApiError(error).message}`;
+        warnings.push(message);
+        sourceDiagnostics.Trends.hasData = true;
+        sourceDiagnostics.Trends.degraded = true;
+        sourceDiagnostics.Trends.errors.push(message);
+        fallbacksUsed.add("trends_fallback_neutral");
+      }
+
+      let flightSignal: FlightDemandSignal = {
+        destinationIata: null as string | null,
+        pricePressureScore: 50,
+        supplyInterestScore: 50,
+        flightDemandIndex: 50,
+        travelIntentMultiplier: 1,
+        source: "fallback" as const
+      };
+
+      try {
+        flightSignal = await getAmadeusFlightDemandSignal({
+          cityName,
+          countryCode: params.countryCode,
+          cityCode,
+          checkInDate: params.checkInDate
+        });
+        sourceDiagnostics.Flights.hasData = true;
+        if (flightSignal.source === "fallback") {
+          sourceDiagnostics.Flights.degraded = true;
+          sourceDiagnostics.Flights.errors.push("Flight-demand signal unavailable; using neutral fallback.");
+          fallbacksUsed.add("flight_demand_fallback_neutral");
+        }
+      } catch (error) {
+        const message = `Flight-demand signal unavailable: ${toApiError(error).message}`;
+        warnings.push(message);
+        sourceDiagnostics.Flights.hasData = true;
+        sourceDiagnostics.Flights.degraded = true;
+        sourceDiagnostics.Flights.errors.push(message);
+        fallbacksUsed.add("flight_demand_fallback_neutral");
+      }
+
+      const universitySignal = getUniversityDemandSignal({
+        cityName,
+        countryCode: params.countryCode,
+        analysisDates: dateRange
+      });
+      sourceDiagnostics.University.hasData = true;
+      if (universitySignal.source === "fallback") {
+        sourceDiagnostics.University.degraded = true;
+        sourceDiagnostics.University.errors.push("No curated university calendar for this market; using neutral baseline.");
+        fallbacksUsed.add("university_fallback_none");
+      }
+
       const engineSignals = dateRange.map((date) => ({
         date,
         weatherCategory: weatherByDate.get(date) ?? "cloudy",
         eventImpactScore: eventImpactByDate.get(date) ?? 0,
         isHoliday: holidayDates.has(date),
         isLongWeekend: longWeekendDates.has(date),
+        searchDemandMultiplier: trendsSignal.searchDemandMultiplier,
+        travelIntentMultiplier: flightSignal.travelIntentMultiplier,
+        campusDemandMultiplier: universitySignal.campusDemandByDate[date]?.multiplier ?? 1,
         pace:
           paceByDate.get(date) ?? {
             date,
@@ -917,6 +1013,24 @@ export function registerRoutes(app: Express) {
         (fallbacksUsed.has("predicthq_fallback_ticketmaster")
           ? "PredictHQ unavailable; using Ticketmaster fallback."
           : undefined);
+      const trendsErrorSummary =
+        sourceDiagnostics.Trends.errors[0] ??
+        (fallbacksUsed.has("trends_fallback_neutral") ? "Using neutral search-demand fallback." : undefined);
+      const flightsErrorSummary =
+        sourceDiagnostics.Flights.errors[0] ??
+        (fallbacksUsed.has("flight_demand_fallback_neutral")
+          ? "Using neutral flight-demand fallback."
+          : undefined);
+      const pmsErrorSummary =
+        sourceDiagnostics.PMS.errors[0] ??
+        (fallbacksUsed.has("pms_fallback_simulated")
+          ? "Cloudbeds unavailable; using simulated PMS pace."
+          : undefined);
+      const universityErrorSummary =
+        sourceDiagnostics.University.errors[0] ??
+        (fallbacksUsed.has("university_fallback_none")
+          ? "No curated university calendar for selected market."
+          : undefined);
 
       const sourceHealth = [
         {
@@ -942,6 +1056,30 @@ export function registerRoutes(app: Express) {
           status: resolveSourceStatus(sourceDiagnostics.Weather),
           errorSummary: sourceDiagnostics.Weather.errors[0],
           lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "Trends",
+          status: resolveSourceStatus(sourceDiagnostics.Trends),
+          errorSummary: trendsErrorSummary,
+          lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "Flights",
+          status: resolveSourceStatus(sourceDiagnostics.Flights),
+          errorSummary: flightsErrorSummary,
+          lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "PMS",
+          status: resolveSourceStatus(sourceDiagnostics.PMS),
+          errorSummary: pmsErrorSummary,
+          lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "University",
+          status: resolveSourceStatus(sourceDiagnostics.University),
+          errorSummary: universityErrorSummary,
+          lastUpdated: new Date().toISOString()
         }
       ] as const;
 
@@ -965,6 +1103,26 @@ export function registerRoutes(app: Express) {
         .filter((row) => row.status === "error")
         .map((row) => row.source);
       const availableSources = sourceHealth.filter((row) => row.status !== "error").length;
+      const demandPressureIndex = Math.min(
+        100,
+        Math.round(
+          occupancy * 0.35 +
+            currentEventDays * 5 +
+            (holidayDates.size > 0 ? 8 : 0) +
+            trendsSignal.searchMomentumIndex * 0.2 +
+            flightSignal.flightDemandIndex * 0.2 +
+            universitySignal.campusDemandDays * 3
+        )
+      );
+      const demandInsightIndex = Math.min(
+        100,
+        Math.round(
+          occupancy * 0.4 +
+            currentEventDays * 5 +
+            trendsSignal.searchMomentumIndex * 0.25 +
+            flightSignal.flightDemandIndex * 0.25
+        )
+      );
 
       const model = {
         pricing,
@@ -979,12 +1137,12 @@ export function registerRoutes(app: Express) {
           revparDeltaPct: previousRevpar ? ((revpar - previousRevpar) / previousRevpar) * 100 : 0,
           occupancyDeltaPct: 0,
           activeMultiplierDelta: activeMultiplier - previousMultiplier,
-          demandPressureIndex: Math.min(100, Math.round(occupancy * 0.45 + currentEventDays * 6 + (holidayDates.size > 0 ? 10 : 0))),
+          demandPressureIndex,
           dataConfidence
         },
         insights: {
           demand: {
-            index: Math.min(100, Math.round(occupancy * 0.5 + currentEventDays * 7)),
+            index: demandInsightIndex,
             level: occupancy >= 80 ? "high" : occupancy >= 60 ? "moderate" : "low",
             occupancySignal: occupancy,
             eventSignal: Math.min(100, currentEventDays * 10),
@@ -994,7 +1152,7 @@ export function registerRoutes(app: Express) {
           dataQuality: {
             confidenceScore: dataConfidence,
             availableSources,
-            totalSources: 4,
+            totalSources: 8,
             hasApiErrors: sourceHealth.some((row) => row.status !== "ok"),
             missingSources
           },
@@ -1017,7 +1175,10 @@ export function registerRoutes(app: Express) {
               const category = weatherByDate.get(date);
               return category === "storm" || category === "rain" || category === "snow";
             }).length,
-            highDemandDays: pricing.filter((entry) => entry.finalMultiplier >= 1.25).length
+            highDemandDays: pricing.filter((entry) => entry.finalMultiplier >= 1.25).length,
+            searchMomentumIndex: trendsSignal.searchMomentumIndex,
+            flightDemandIndex: flightSignal.flightDemandIndex,
+            campusDemandDays: universitySignal.campusDemandDays
           }
         },
         marketAnchor: {
@@ -1081,7 +1242,9 @@ export function registerRoutes(app: Express) {
           countryCode: params.countryCode,
           hotelType,
           daysForward,
-          runMode: "fallback_first"
+          runMode: "fallback_first",
+          phase: "phase2_wave1",
+          pmsMode: pmsResult.modeUsed
         },
         fallbacksUsed: Array.from(fallbacksUsed),
         usage,

@@ -41,6 +41,9 @@ export interface DateExplainability {
     weather: ExplainabilityFactor;
     holiday: ExplainabilityFactor;
     leadTime: ExplainabilityFactor;
+    searchDemand: ExplainabilityFactor;
+    travelIntent: ExplainabilityFactor;
+    campusDemand: ExplainabilityFactor;
   };
   guardrails: {
     minHit: boolean;
@@ -55,6 +58,8 @@ export interface AnalysisContext {
   hotelType: "city" | "business" | "leisure" | "beach" | "ski";
   daysForward: number;
   runMode: "fallback_first";
+  phase: "phase2_wave1";
+  pmsMode: "simulated" | "cloudbeds";
 }
 
 export interface SelectedDateExplainability {
@@ -95,10 +100,13 @@ export interface MarketSignalsSummary {
   longWeekendDays: number;
   weatherRiskDays: number;
   highDemandDays: number;
+  searchMomentumIndex: number;
+  flightDemandIndex: number;
+  campusDemandDays: number;
 }
 
 export interface SourceHealthRow {
-  source: "Hotels" | "Events" | "Holidays" | "Weather";
+  source: "Hotels" | "Events" | "Holidays" | "Weather" | "Trends" | "Flights" | "PMS" | "University";
   status: "ok" | "loading" | "error";
   errorSummary?: string;
   lastUpdated?: string;

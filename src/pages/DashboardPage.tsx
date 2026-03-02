@@ -35,6 +35,12 @@ function factorLabel(key: keyof DateExplainability["factors"]) {
       return "Holidays";
     case "leadTime":
       return "Lead Time";
+    case "searchDemand":
+      return "Search Demand";
+    case "travelIntent":
+      return "Travel Intent";
+    case "campusDemand":
+      return "Campus Demand";
     default:
       return key;
   }
@@ -213,10 +219,40 @@ export function DashboardPage() {
                   {model.recommendationConfidence.level}
                 </Badge>
                 <Badge tone="neutral">{analysisContext.cityName}</Badge>
+                <Badge tone="neutral" className="uppercase">{analysisContext.pmsMode}</Badge>
               </div>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{model.recommendationConfidence.reason}</p>
             </Card>
           </div>
+
+          <Card className="bg-white/95 dark:bg-neutral-900/95">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold tracking-tight">Demand Intent</h3>
+              <Badge tone="gold">Phase 2</Badge>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Search Momentum</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.searchMomentumIndex}
+                  <span className="text-sm font-medium text-gray-500">/100</span>
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Flight Demand</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.flightDemandIndex}
+                  <span className="text-sm font-medium text-gray-500">/100</span>
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-neutral-800/60">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Campus Demand Days</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-dune-900 dark:text-gray-100">
+                  {model.insights.signals.campusDemandDays}
+                </p>
+              </div>
+            </div>
+          </Card>
 
           <CompsetPositionChart
             rates={chartRates}
@@ -340,7 +376,7 @@ export function DashboardPage() {
 
           <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
             <h3 className="text-lg font-bold tracking-tight">Source Health</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Live status of Hotels, Events, Holidays, and Weather pipelines.</p>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Live status of Hotels, Events, Holidays, Weather, Trends, Flights, PMS, and University pipelines.</p>
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>

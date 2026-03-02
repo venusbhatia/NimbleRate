@@ -47,6 +47,9 @@ export function ActionRecommendations({ demand, dataQuality, actions, signals }:
         <p>Holiday days: <span className="font-semibold tabular-nums">{signals.holidayDays}</span></p>
         <p>Long-weekend days: <span className="font-semibold tabular-nums">{signals.longWeekendDays}</span></p>
         <p>Weather-risk days: <span className="font-semibold tabular-nums">{signals.weatherRiskDays}</span></p>
+        <p>Search momentum: <span className="font-semibold tabular-nums">{signals.searchMomentumIndex}/100</span></p>
+        <p>Flight demand: <span className="font-semibold tabular-nums">{signals.flightDemandIndex}/100</span></p>
+        <p>Campus demand days: <span className="font-semibold tabular-nums">{signals.campusDemandDays}</span></p>
       </div>
 
       <div className="space-y-3">

@@ -5,6 +5,7 @@ import type { MarketAnalysisResponse } from "../types/dashboard";
 
 export interface MarketAnalysisParams {
   cityName: string;
+  cityCode?: string | null;
   countryCode: string;
   latitude: number;
   longitude: number;

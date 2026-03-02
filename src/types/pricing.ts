@@ -8,6 +8,9 @@ export interface PricingFactors {
   weather: number;
   holiday: number;
   leadTime: number;
+  searchDemand: number;
+  travelIntent: number;
+  campusDemand: number;
 }
 
 export interface PricingContext {

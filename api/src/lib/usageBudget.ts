@@ -16,7 +16,13 @@ function providerQuota(provider: ExternalProvider) {
   if (provider === "makcorps") {
     return config.makcorpsDailyCallBudget;
   }
-  return config.predictHqDailyCallBudget;
+  if (provider === "predicthq") {
+    return config.predictHqDailyCallBudget;
+  }
+  if (provider === "serpapi") {
+    return config.serpApiDailyCallBudget;
+  }
+  return config.amadeusFlightsDailyCallBudget;
 }
 
 function buildRecommendation(status: ProviderUsageSummary["status"], provider: ExternalProvider, remaining: number) {
@@ -112,7 +118,7 @@ export function assertProviderBudget(provider: ExternalProvider, critical = fals
 }
 
 export function getUsageSummary() {
-  const providers: ExternalProvider[] = ["makcorps", "predicthq"];
+  const providers: ExternalProvider[] = ["makcorps", "predicthq", "serpapi", "amadeus_flights"];
   const details = providers.map((provider) => getProviderUsage(provider));
 
   return {

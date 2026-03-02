@@ -42,7 +42,9 @@ Set secrets in `api/.env.local`:
   - `MAKCORPS_RAPIDAPI_BASE_URL` (optional override)
   - `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (optional legacy auth fallback)
   - `PREDICTHQ_API_TOKEN`
-  - `SERPAPI_API_KEY` (reserved for trends integration)
+  - `SERPAPI_API_KEY`
+  - `PMS_PROVIDER=simulated|cloudbeds` (default `simulated`)
+  - `CLOUDBEDS_API_KEY`, `CLOUDBEDS_PROPERTY_ID` (only when `PMS_PROVIDER=cloudbeds`)
 
 3. Start dev server:
 
@@ -126,10 +128,19 @@ src/
 - External provider calls are made only when the user clicks `Run Analysis`.
 - `/api/usage/summary` powers provider call counters and quota warnings in Settings.
 - Demo defaults are Austin-first (`AUS`, US) while global city search remains enabled.
-- `/api/market/analysis` now returns `analysisContext`, `fallbacksUsed`, and `explainabilityByDate` for per-date explainability UI.
+- `/api/market/analysis` returns `analysisContext`, `fallbacksUsed`, `sourceHealth`, and `explainabilityByDate` for per-date explainability UI.
+- Phase-2 Wave-1 active signals:
+  - Search demand (SerpAPI trends)
+  - Travel intent (Amadeus flight demand)
+  - PMS pace mode (`simulated` by default, Cloudbeds scaffold fallback)
+  - Curated university demand calendar
 
 ## Notes
 
 - Frontend now uses backend proxy routes under `/api`.
 - Keep secrets only in `api/.env.local`.
-- Phase-2 signals (SerpAPI trends + Amadeus flight-demand intent) are intentionally deferred until after Phase-1 stabilization.
+- Fallback matrix in `/api/market/analysis`:
+  - `trends_fallback_neutral`
+  - `flight_demand_fallback_neutral`
+  - `pms_fallback_simulated`
+  - `university_fallback_none`

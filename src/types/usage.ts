@@ -1,4 +1,4 @@
-export type ExternalProvider = "makcorps" | "predicthq";
+export type ExternalProvider = "makcorps" | "predicthq" | "serpapi" | "amadeus_flights";
 export type ProviderUsageStatus = "ok" | "warning" | "critical";
 
 export interface ProviderUsageSummary {

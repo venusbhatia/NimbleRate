@@ -21,7 +21,10 @@ export function MultiplierBreakdown({ recommendation }: MultiplierBreakdownProps
     { label: "Events", hint: "Nearby events driving demand", value: recommendation.factors.events },
     { label: "Weather", hint: "Weather conditions impact", value: recommendation.factors.weather },
     { label: "Holiday", hint: "Public holiday premium", value: recommendation.factors.holiday },
-    { label: "Lead Time", hint: "How far out the date is", value: recommendation.factors.leadTime }
+    { label: "Lead Time", hint: "How far out the date is", value: recommendation.factors.leadTime },
+    { label: "Search Demand", hint: "Destination search momentum", value: recommendation.factors.searchDemand },
+    { label: "Travel Intent", hint: "Flight demand signal", value: recommendation.factors.travelIntent },
+    { label: "Campus Demand", hint: "University calendar pressure", value: recommendation.factors.campusDemand }
   ];
 
   return (

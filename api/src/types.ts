@@ -4,7 +4,7 @@ export interface ApiErrorShape {
   details?: unknown;
 }
 
-export type ExternalProvider = "makcorps" | "predicthq";
+export type ExternalProvider = "makcorps" | "predicthq" | "serpapi" | "amadeus_flights";
 
 export interface ProviderUsageRow {
   provider: ExternalProvider;

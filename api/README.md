@@ -57,12 +57,23 @@ pnpm --dir api build
 - Frontend should call only backend `/api/*` routes (no direct provider keys in frontend).
 - In local development, root `vite.config.ts` proxies `/api` to `http://localhost:8787`.
 - Set `FRONTEND_ORIGIN=http://localhost:5173` in `api/.env.local` for local CORS.
-- v2 provider integrations are optional at boot: missing Makcorps/PredictHQ keys return structured `NOT_CONFIGURED` errors for direct provider endpoints, while `/api/market/analysis` degrades gracefully with fallbacks and warnings.
+- v2 provider integrations are optional at boot: missing keys return structured `NOT_CONFIGURED` errors for direct provider endpoints, while `/api/market/analysis` degrades gracefully with fallbacks and warnings.
 - Makcorps auth is API-key-first:
   - Preferred: `MAKCORPS_API_KEY`
   - Optional fallback: `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (legacy token flow)
   - Optional transport switch: `MAKCORPS_USE_RAPIDAPI=true` when your key is provisioned through RapidAPI
+- Phase-2 Wave-1 demand-intent providers:
+  - `SERPAPI_API_KEY` (Google Trends demand momentum)
+  - `AMADEUS_FLIGHTS_DAILY_CALL_BUDGET` (flight-demand usage guardrail)
+  - `PMS_PROVIDER=simulated|cloudbeds` (default `simulated`)
+  - `CLOUDBEDS_API_KEY`, `CLOUDBEDS_PROPERTY_ID` (Cloudbeds scaffold mode)
 - `/api/market/analysis` includes:
   - `analysisContext` (run metadata)
   - `fallbacksUsed` (machine-readable fallback flags)
+  - `sourceHealth` (Hotels, Events, Holidays, Weather, Trends, Flights, PMS, University)
   - `explainabilityByDate` (per-day factor contribution + guardrail details)
+- New fallback flags in phase2_wave1:
+  - `trends_fallback_neutral`
+  - `flight_demand_fallback_neutral`
+  - `pms_fallback_simulated`
+  - `university_fallback_none`

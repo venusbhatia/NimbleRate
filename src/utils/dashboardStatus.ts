@@ -23,6 +23,14 @@ export function fallbackLabel(code: string) {
       return "PredictHQ -> Ticketmaster fallback";
     case "compset_fallback_static":
       return "Static compset fallback";
+    case "trends_fallback_neutral":
+      return "Trends -> neutral fallback";
+    case "flight_demand_fallback_neutral":
+      return "Flights -> neutral fallback";
+    case "pms_fallback_simulated":
+      return "PMS -> simulated fallback";
+    case "university_fallback_none":
+      return "University -> neutral fallback";
     default:
       return code;
   }

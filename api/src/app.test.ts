@@ -182,15 +182,29 @@ describe("api routes", () => {
     expect(Array.isArray(response.body.warnings)).toBe(true);
     expect(response.body.analysisContext?.cityName).toBe("Austin");
     expect(response.body.analysisContext?.runMode).toBe("fallback_first");
+    expect(response.body.analysisContext?.phase).toBe("phase2_wave1");
+    expect(response.body.analysisContext?.pmsMode).toBe("simulated");
     expect(Array.isArray(response.body.fallbacksUsed)).toBe(true);
     expect(response.body.fallbacksUsed).toContain("compset_fallback_static");
+    expect(response.body.fallbacksUsed).toContain("trends_fallback_neutral");
+    expect(response.body.fallbacksUsed).toContain("flight_demand_fallback_neutral");
     expect(response.body.explainabilityByDate).toBeDefined();
     const firstDate = response.body.model.pricing[0]?.date;
     expect(firstDate).toBeTruthy();
     expect(response.body.explainabilityByDate[firstDate]).toBeDefined();
     expect(response.body.explainabilityByDate[firstDate].guardrails).toBeDefined();
+    expect(response.body.explainabilityByDate[firstDate].factors.searchDemand).toBeDefined();
+    expect(response.body.explainabilityByDate[firstDate].factors.travelIntent).toBeDefined();
+    expect(response.body.explainabilityByDate[firstDate].factors.campusDemand).toBeDefined();
+    expect(response.body.model.insights.signals.searchMomentumIndex).toBeTypeOf("number");
+    expect(response.body.model.insights.signals.flightDemandIndex).toBeTypeOf("number");
+    expect(response.body.model.insights.signals.campusDemandDays).toBeTypeOf("number");
     expect(Array.isArray(response.body.sourceHealth)).toBe(true);
     expect(response.body.sourceHealth.some((row: { source: string; status: string }) => row.source === "Hotels")).toBe(true);
+    expect(response.body.sourceHealth.some((row: { source: string; status: string }) => row.source === "Trends")).toBe(true);
+    expect(response.body.sourceHealth.some((row: { source: string; status: string }) => row.source === "Flights")).toBe(true);
+    expect(response.body.sourceHealth.some((row: { source: string; status: string }) => row.source === "PMS")).toBe(true);
+    expect(response.body.sourceHealth.some((row: { source: string; status: string }) => row.source === "University")).toBe(true);
   });
 
   it("sets explicit events fallback flag when Ticketmaster fallback succeeds", async () => {

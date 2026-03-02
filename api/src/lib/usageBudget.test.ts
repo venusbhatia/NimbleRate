@@ -26,8 +26,10 @@ describe("usageBudget", () => {
 
   it("returns aggregate summary", () => {
     incrementProviderUsage("predicthq", 10);
+    incrementProviderUsage("serpapi", 5);
     const summary = getUsageSummary();
-    expect(summary.providers).toHaveLength(2);
+    expect(summary.providers).toHaveLength(4);
     expect(summary.providers.some((provider) => provider.provider === "predicthq")).toBe(true);
+    expect(summary.providers.some((provider) => provider.provider === "serpapi")).toBe(true);
   });
 });

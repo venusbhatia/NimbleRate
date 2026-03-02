@@ -103,7 +103,10 @@ function createPlaceholderPricing(startDate: string, days = 30): PricingRecommen
         events: 1,
         weather: 1,
         holiday: 1,
-        leadTime: 1
+        leadTime: 1,
+        searchDemand: 1,
+        travelIntent: 1,
+        campusDemand: 1
       }
     };
   });
@@ -168,9 +171,9 @@ function createFallbackModel(params: ReturnType<typeof useSearchParams>): Dashbo
       dataQuality: {
         confidenceScore: 25,
         availableSources: 0,
-        totalSources: 4,
+        totalSources: 8,
         hasApiErrors: false,
-        missingSources: ["Hotels & Offers", "Events", "Holidays", "Weather"]
+        missingSources: ["Hotels", "Events", "Holidays", "Weather", "Trends", "Flights", "PMS", "University"]
       },
       actions: [
         {
@@ -188,7 +191,10 @@ function createFallbackModel(params: ReturnType<typeof useSearchParams>): Dashbo
         holidayDays: 0,
         longWeekendDays: 0,
         weatherRiskDays: 0,
-        highDemandDays: 0
+        highDemandDays: 0,
+        searchMomentumIndex: 50,
+        flightDemandIndex: 50,
+        campusDemandDays: 0
       }
     }
   };
@@ -238,6 +244,7 @@ export function useDashboardData() {
       "market-analysis",
       params.searchToken,
       params.cityName,
+      params.cityCode,
       params.countryCode,
       params.latitude,
       params.longitude,
@@ -252,6 +259,7 @@ export function useDashboardData() {
     queryFn: async () =>
       getMarketAnalysis({
         cityName: params.cityName,
+        cityCode: params.cityCode ?? undefined,
         countryCode: params.countryCode,
         latitude: params.latitude,
         longitude: params.longitude,
@@ -365,7 +373,10 @@ export function useDashboardData() {
           events: { value: 1, contribution: 0, reason: "Run analysis for event impact." },
           weather: { value: 1, contribution: 0, reason: "Run analysis for weather impact." },
           holiday: { value: 1, contribution: 0, reason: "Run analysis for holiday impact." },
-          leadTime: { value: 1, contribution: 0, reason: "Run analysis for lead-time impact." }
+          leadTime: { value: 1, contribution: 0, reason: "Run analysis for lead-time impact." },
+          searchDemand: { value: 1, contribution: 0, reason: "Run analysis for search-demand impact." },
+          travelIntent: { value: 1, contribution: 0, reason: "Run analysis for flight-demand impact." },
+          campusDemand: { value: 1, contribution: 0, reason: "Run analysis for university-demand impact." }
         },
         guardrails: {
           minHit: false,
@@ -388,7 +399,9 @@ export function useDashboardData() {
       countryCode: params.countryCode,
       hotelType: params.hotelType,
       daysForward: 30,
-      runMode: "fallback_first"
+      runMode: "fallback_first",
+      phase: "phase2_wave1",
+      pmsMode: "simulated"
     };
   }, [analysisQuery.data?.analysisContext, params.cityName, params.countryCode, params.hotelType]);
 
@@ -417,6 +430,26 @@ export function useDashboardData() {
       },
       {
         source: "Weather",
+        status: queryStatus(analysisQuery.isLoading, analysisQuery.isFetching, Boolean(analysisQuery.error)),
+        errorSummary: analysisQuery.error ? toDashboardApiError("analysis", analysisQuery.error).message : notRunSummary
+      },
+      {
+        source: "Trends",
+        status: queryStatus(analysisQuery.isLoading, analysisQuery.isFetching, Boolean(analysisQuery.error)),
+        errorSummary: analysisQuery.error ? toDashboardApiError("analysis", analysisQuery.error).message : notRunSummary
+      },
+      {
+        source: "Flights",
+        status: queryStatus(analysisQuery.isLoading, analysisQuery.isFetching, Boolean(analysisQuery.error)),
+        errorSummary: analysisQuery.error ? toDashboardApiError("analysis", analysisQuery.error).message : notRunSummary
+      },
+      {
+        source: "PMS",
+        status: queryStatus(analysisQuery.isLoading, analysisQuery.isFetching, Boolean(analysisQuery.error)),
+        errorSummary: analysisQuery.error ? toDashboardApiError("analysis", analysisQuery.error).message : notRunSummary
+      },
+      {
+        source: "University",
         status: queryStatus(analysisQuery.isLoading, analysisQuery.isFetching, Boolean(analysisQuery.error)),
         errorSummary: analysisQuery.error ? toDashboardApiError("analysis", analysisQuery.error).message : notRunSummary
       }

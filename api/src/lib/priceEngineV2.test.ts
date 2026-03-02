@@ -9,6 +9,9 @@ function makeSignals(days: number): EngineSignalInput[] {
     eventImpactScore: idx === 0 ? 65 : 20,
     isHoliday: idx === 2,
     isLongWeekend: false,
+    searchDemandMultiplier: 1,
+    travelIntentMultiplier: 1,
+    campusDemandMultiplier: 1,
     pace: {
       date: format(addDays(new Date(), idx + 1), "yyyy-MM-dd"),
       roomsBooked: 24,

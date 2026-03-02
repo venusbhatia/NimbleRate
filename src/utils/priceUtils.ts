@@ -130,7 +130,10 @@ export function calculatePricingRecommendation(context: PricingContext): Pricing
     events: getEventMultiplier(context.eventIntensity),
     weather: getWeatherMultiplier(context.weatherCategory, context.hotelType),
     holiday: getHolidayMultiplier(context.isHoliday, context.isLongWeekend),
-    leadTime: getLeadTimeMultiplier(context.daysUntilCheckIn)
+    leadTime: getLeadTimeMultiplier(context.daysUntilCheckIn),
+    searchDemand: 1,
+    travelIntent: 1,
+    campusDemand: 1
   };
 
   const rawMultiplier =
@@ -140,7 +143,10 @@ export function calculatePricingRecommendation(context: PricingContext): Pricing
     factors.events *
     factors.weather *
     factors.holiday *
-    factors.leadTime;
+    factors.leadTime *
+    factors.searchDemand *
+    factors.travelIntent *
+    factors.campusDemand;
 
   const maxMultiplier = TIER_CAPS[context.tier];
   const finalMultiplier = clamp(dampenedMultiplier(rawMultiplier), 0.75, maxMultiplier);

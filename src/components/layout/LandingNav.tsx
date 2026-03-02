@@ -21,7 +21,7 @@ export function LandingNav() {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link to="" className="flex items-center gap-2">
-          <img src={logoSvg} alt="NimbleRate" className="h-8 dark:brightness-0 dark:invert" />
+          <img src={logoSvg} alt="NimbleRate" className="h-10 logo-dark-mode" />
         </Link>
         <Link
           to="dashboard"

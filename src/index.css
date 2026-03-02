@@ -53,6 +53,12 @@ body {
   background-color: #44381a;
 }
 
+/* ---- Logo dark mode — preserve brand colors ---- */
+
+.dark .logo-dark-mode {
+  filter: brightness(1.6) saturate(1.3);
+}
+
 /* ---- Landing page utilities ---- */
 
 @keyframes hero-fade {

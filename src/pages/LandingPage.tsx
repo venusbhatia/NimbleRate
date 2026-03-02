@@ -238,7 +238,7 @@ export function LandingPage() {
       {/* ===== CTA FOOTER ===== */}
       <section className="border-t border-gray-200/60 bg-brand-charcoal py-20 dark:border-gray-700/40">
         <div className="mx-auto max-w-3xl px-6 text-center">
-          <img src={logoSvg} alt="" className="mx-auto mb-6 h-10 brightness-0 invert" />
+          <img src={logoSvg} alt="" className="mx-auto mb-6 h-12" style={{ filter: "brightness(1.6) saturate(1.3)" }} />
           <h2 className="font-heading text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Ready to price smarter?
           </h2>

@@ -21,7 +21,7 @@ export function Sidebar() {
     <div className="flex h-full flex-col">
       <div className="mb-6 flex items-center justify-between">
         <Link to="dashboard" className="flex items-center gap-2">
-          <img src={logoSvg} alt="NimbleRate" className="h-7 dark:brightness-0 dark:invert" />
+          <img src={logoSvg} alt="NimbleRate" className="h-9 logo-dark-mode" />
         </Link>
         <button
           type="button"

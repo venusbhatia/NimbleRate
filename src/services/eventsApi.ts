@@ -1,18 +1,6 @@
-import ngeohash from "ngeohash";
 import { apiFetch } from "./apiClient";
+import { apiPath } from "./backendBaseUrl";
 import type { TicketmasterEvent, TicketmasterEventsPage } from "../types/events";
-
-const TICKETMASTER_BASE_URL = "https://app.ticketmaster.com/discovery/v2";
-
-function getTicketmasterApiKey() {
-  const apiKey = import.meta.env.VITE_TICKETMASTER_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Missing Ticketmaster API key. Set VITE_TICKETMASTER_API_KEY.");
-  }
-
-  return apiKey;
-}
 
 function normalizeTicketmasterEvent(raw: any): TicketmasterEvent {
   const venue = raw?._embedded?.venues?.[0];
@@ -49,23 +37,8 @@ export async function getEventsNearLocation(params: {
   sort?: "date,asc" | "date,desc" | "relevance,desc" | "distance,asc" | "name,asc";
   classificationName?: string;
 }) {
-  const apiKey = getTicketmasterApiKey();
-  const geoPoint = ngeohash.encode(params.latitude, params.longitude, 7);
-
-  const result = await apiFetch<any>(`${TICKETMASTER_BASE_URL}/events.json`, {
-    params: {
-      apikey: apiKey,
-      geoPoint,
-      latlong: `${params.latitude},${params.longitude}`,
-      radius: params.radius ?? 25,
-      unit: params.unit ?? "miles",
-      sort: params.sort ?? "date,asc",
-      size: params.size ?? 50,
-      page: params.page ?? 0,
-      startDateTime: params.startDateTime,
-      endDateTime: params.endDateTime,
-      classificationName: params.classificationName
-    }
+  const result = await apiFetch<any>(apiPath("/api/events"), {
+    params
   });
 
   const events = (result?._embedded?.events ?? []).map(normalizeTicketmasterEvent);

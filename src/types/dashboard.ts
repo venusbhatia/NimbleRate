@@ -1,8 +1,17 @@
 import type { TicketmasterEvent } from "./events";
 import type { WeatherDailySummary } from "./weather";
 import type { PricingRecommendation } from "./pricing";
+import type { CompsetHotel, CompsetSummary } from "./compset";
+import type { ProviderUsageSummary, UsageSummaryResponse } from "./usage";
 
-export type DashboardApiErrorSource = "hotels" | "offers" | "events" | "holidays" | "weather";
+export type DashboardApiErrorSource =
+  | "hotels"
+  | "offers"
+  | "events"
+  | "holidays"
+  | "weather"
+  | "analysis"
+  | "usage";
 
 export interface DashboardApiErrorDetail {
   source: DashboardApiErrorSource;
@@ -76,10 +85,47 @@ export interface DashboardModel {
   kpis: DashboardKpis;
   events: TicketmasterEvent[];
   weather: WeatherDailySummary[];
+  marketAnchor: {
+    anchorRate: number;
+    compsetMedian: number;
+    compsetP25: number;
+    compsetP75: number;
+    targetMarketPosition: number;
+    source: "makcorps" | "amadeus" | "fallback";
+  };
+  compsetPosition: {
+    recommendedRate: number;
+    deltaVsMedian: number;
+    percentileBand: "below_p25" | "mid_band" | "above_p75";
+  };
+  recommendationConfidence: {
+    level: "high" | "medium" | "low";
+    score: number;
+    reason: string;
+  };
+  providerUsage: ProviderUsageSummary[];
+  compset: {
+    source: "makcorps" | "amadeus" | "fallback";
+    hotels: CompsetHotel[];
+    summary: CompsetSummary;
+  };
   insights: {
     demand: DemandInsight;
     dataQuality: DataQualityInsight;
     actions: ActionRecommendation[];
     signals: MarketSignalsSummary;
   };
+}
+
+export interface MarketAnalysisResponse {
+  generatedAt: string;
+  warnings: string[];
+  usage: UsageSummaryResponse;
+  model: DashboardModel;
+  sourceHealth: SourceHealthRow[];
+  pricingReasonsByDate: Record<string, string[]>;
+  eventDates: string[];
+  holidayDates: string[];
+  longWeekendDates: string[];
+  highDemandDates: string[];
 }

@@ -22,6 +22,14 @@ function optionalNumber(name: string, fallback: number): number {
   return parsed;
 }
 
+function optionalString(name: string): string | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  return raw;
+}
+
 function optionalBoolean(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (raw === undefined) {
@@ -38,6 +46,24 @@ export const config = {
   amadeusApiSecret: required("AMADEUS_API_SECRET"),
   ticketmasterApiKey: required("TICKETMASTER_CONSUMER_KEY"),
   openWeatherApiKey: required("OPENWEATHER_API_KEY"),
+  makcorpsBaseUrl: process.env.MAKCORPS_BASE_URL ?? "https://api.makcorps.com",
+  makcorpsApiKey: optionalString("MAKCORPS_API_KEY"),
+  makcorpsUsername: optionalString("MAKCORPS_USERNAME"),
+  makcorpsPassword: optionalString("MAKCORPS_PASSWORD"),
+  makcorpsUseRapidApi: optionalBoolean("MAKCORPS_USE_RAPIDAPI", false),
+  makcorpsRapidApiHost: optionalString("MAKCORPS_RAPIDAPI_HOST"),
+  makcorpsRapidApiBaseUrl:
+    process.env.MAKCORPS_RAPIDAPI_BASE_URL ?? "https://makcorps-hotel-price-comparison.p.rapidapi.com",
+  makcorpsDailyCallBudget: optionalNumber("MAKCORPS_DAILY_CALL_BUDGET", 25),
+  predictHqBaseUrl: process.env.PREDICTHQ_BASE_URL ?? "https://api.predicthq.com/v1",
+  predictHqApiToken: optionalString("PREDICTHQ_API_TOKEN"),
+  predictHqDailyCallBudget: optionalNumber("PREDICTHQ_DAILY_CALL_BUDGET", 100),
+  serpApiKey: optionalString("SERPAPI_API_KEY"),
+  demoCity: process.env.DEMO_CITY ?? "Austin",
+  demoLatitude: Number(process.env.DEMO_LAT ?? 30.2672),
+  demoLongitude: Number(process.env.DEMO_LON ?? -97.7431),
+  demoCountryCode: process.env.DEMO_COUNTRY ?? "US",
+  analysisDaysForward: optionalNumber("ANALYSIS_DAYS_FORWARD", 30),
   nagerBaseUrl: "https://date.nager.at/api/v3",
   rateLimitEnabled: optionalBoolean("RATE_LIMIT_ENABLED", true),
   rateLimitWindowMs: optionalNumber("RATE_LIMIT_WINDOW_MS", 60_000),

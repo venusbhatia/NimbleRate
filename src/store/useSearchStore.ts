@@ -8,6 +8,7 @@ interface SearchState {
   countryCode: string;
   latitude: number;
   longitude: number;
+  searchToken: number;
   checkInDate: string;
   checkOutDate: string;
   adults: number;
@@ -24,6 +25,7 @@ interface SearchState {
   setAdults: (adults: number) => void;
   setHotelType: (hotelType: HotelType) => void;
   setEstimatedOccupancy: (estimatedOccupancy: number) => void;
+  runAnalysis: () => void;
 }
 
 const now = new Date();
@@ -36,6 +38,7 @@ export const useSearchStore = create<SearchState>((set) => ({
   countryCode: "US",
   latitude: 40.7128,
   longitude: -74.006,
+  searchToken: 0,
   checkInDate: defaultCheckInDate,
   checkOutDate: defaultCheckOutDate,
   adults: 2,
@@ -52,5 +55,6 @@ export const useSearchStore = create<SearchState>((set) => ({
   setDates: (checkInDate, checkOutDate) => set({ checkInDate, checkOutDate }),
   setAdults: (adults) => set({ adults }),
   setHotelType: (hotelType) => set({ hotelType }),
-  setEstimatedOccupancy: (estimatedOccupancy) => set({ estimatedOccupancy })
+  setEstimatedOccupancy: (estimatedOccupancy) => set({ estimatedOccupancy }),
+  runAnalysis: () => set((state) => ({ searchToken: state.searchToken + 1 }))
 }));

@@ -36,6 +36,13 @@ Set secrets in `api/.env.local`:
 - `AMADEUS_API_SECRET`
 - `TICKETMASTER_CONSUMER_KEY`
 - `OPENWEATHER_API_KEY`
+- Optional v2 providers:
+  - `MAKCORPS_API_KEY` (preferred)
+  - `MAKCORPS_USE_RAPIDAPI` + `MAKCORPS_RAPIDAPI_HOST` (if using RapidAPI gateway)
+  - `MAKCORPS_RAPIDAPI_BASE_URL` (optional override)
+  - `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (legacy auth flow)
+  - `PREDICTHQ_API_TOKEN`
+  - `SERPAPI_API_KEY` (reserved for trends integration)
 
 3. Start dev server:
 
@@ -112,6 +119,12 @@ src/
 - Log dampening above 2.5x
 - Tier caps: budget 2.5x, midscale 3x, luxury 4.5x
 - Daily change guardrails: +/-20%
+
+## v2 Analysis Flow
+
+- Dashboard calls `/api/market/analysis` as the primary integration route.
+- External provider calls are made only when the user clicks `Run Analysis`.
+- `/api/usage/summary` powers provider call counters and quota warnings in Settings.
 
 ## Notes
 

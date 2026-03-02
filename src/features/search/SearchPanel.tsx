@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, HelpCircle, Loader2, MapPin, Users } from "lucide-react";
+import { Building2, CalendarDays, HelpCircle, Loader2, MapPin, Play, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "../../components/ui/Card";
 import { useDebounce } from "../../hooks/useDebounce";
@@ -198,11 +198,13 @@ export function SearchPanel() {
     adults,
     hotelType,
     estimatedOccupancy,
+    searchToken,
     setCity,
     setDates,
     setAdults,
     setHotelType,
-    setEstimatedOccupancy
+    setEstimatedOccupancy,
+    runAnalysis
   } = useSearchStore();
   const [cityQuery, setCityQuery] = useState([cityName, countryCode].filter(Boolean).join(", "));
   const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
@@ -521,6 +523,22 @@ export function SearchPanel() {
           <span>Half full</span>
           <span>Packed</span>
         </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {searchToken > 0
+            ? `Analysis run #${searchToken}. Provider APIs are called only when you click run.`
+            : "No analysis run yet. Click Run Analysis to fetch live market data."}
+        </p>
+        <button
+          type="button"
+          onClick={runAnalysis}
+          className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 active:scale-[0.98]"
+        >
+          <Play className="h-4 w-4" />
+          Run Analysis
+        </button>
       </div>
     </Card>
   );

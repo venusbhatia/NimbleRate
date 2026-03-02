@@ -72,6 +72,13 @@ Protect `dev` with the same required status checks.
   - `AMADEUS_API_SECRET`
   - `TICKETMASTER_CONSUMER_KEY`
   - `OPENWEATHER_API_KEY`
+  - `MAKCORPS_API_KEY` (optional for v2; preferred for live compset)
+  - `MAKCORPS_USE_RAPIDAPI` + `MAKCORPS_RAPIDAPI_HOST` (only if using RapidAPI transport)
+  - `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (legacy alternative to API key)
+  - `PREDICTHQ_API_TOKEN` (optional for v2; required for PredictHQ primary events feed)
+  - `SERPAPI_API_KEY` (optional; used when trends endpoint is enabled)
+  - `MAKCORPS_DAILY_CALL_BUDGET` (recommended)
+  - `PREDICTHQ_DAILY_CALL_BUDGET` (recommended)
   - `FRONTEND_ORIGIN=https://<frontend-domain>`
   - `RATE_LIMIT_ENABLED=true`
   - `RATE_LIMIT_WINDOW_MS=60000`

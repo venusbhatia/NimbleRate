@@ -6,6 +6,9 @@ process.env.AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET ?? "test-amadeus
 process.env.TICKETMASTER_CONSUMER_KEY = process.env.TICKETMASTER_CONSUMER_KEY ?? "test-ticketmaster-key";
 process.env.OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY ?? "test-openweather-key";
 process.env.RATE_LIMIT_ENABLED = "false";
+process.env.MAKCORPS_API_KEY = "";
+process.env.MAKCORPS_USERNAME = "";
+process.env.MAKCORPS_PASSWORD = "";
 
 const { createApp } = await import("./app.js");
 const { clearResponseCache } = await import("./lib/http.js");
@@ -94,5 +97,88 @@ describe("api routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual([]);
+  });
+
+  it("returns not-configured response for Makcorps compset routes when credentials are missing", async () => {
+    const response = await request(app).get(
+      "/api/compset/search?city=Austin&checkInDate=2026-03-10&checkOutDate=2026-03-12"
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.body.message).toContain("Makcorps provider not configured");
+    expect(response.body.details?.code).toBe("NOT_CONFIGURED");
+  });
+
+  it("returns usage summary endpoint payload", async () => {
+    const response = await request(app).get("/api/usage/summary");
+
+    expect(response.status).toBe(200);
+    expect(response.body.providers).toBeDefined();
+    expect(Array.isArray(response.body.providers)).toBe(true);
+  });
+
+  it("returns Makcorps diagnostics payload even when provider is not configured", async () => {
+    const response = await request(app).get(
+      "/api/providers/makcorps/diagnostics?city=Austin&checkInDate=2026-03-10&checkOutDate=2026-03-12"
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.configured).toBe(false);
+    expect(Array.isArray(response.body.attempts)).toBe(true);
+    expect(response.body.recommendedMode).toBe("none");
+  });
+
+  it("returns market analysis payload with degraded fallbacks when providers are unavailable", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.includes("/PublicHolidays/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("/LongWeekend/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("openweathermap.org/data/2.5/forecast")) {
+        return new Response(
+          JSON.stringify({
+            list: [
+              {
+                dt_txt: "2026-03-10 12:00:00",
+                main: { temp: 22, humidity: 45 },
+                pop: 0.1,
+                weather: [{ id: 800, icon: "01d" }]
+              }
+            ]
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      return new Response(JSON.stringify({ message: "upstream unavailable in test" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+
+    const response = await request(app).get(
+      "/api/market/analysis?cityName=Austin&countryCode=US&latitude=30.2672&longitude=-97.7431&checkInDate=2026-03-10&checkOutDate=2026-03-12&hotelType=city&estimatedOccupancy=68&adults=2"
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.model).toBeDefined();
+    expect(response.body.model.marketAnchor).toBeDefined();
+    expect(Array.isArray(response.body.model.pricing)).toBe(true);
+    expect(Array.isArray(response.body.warnings)).toBe(true);
   });
 });

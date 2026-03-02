@@ -6,3 +6,6 @@ dist
 coverage
 *.log
 *.tsbuildinfo
+api/data/*.db
+api/data/*.db-shm
+api/data/*.db-wal

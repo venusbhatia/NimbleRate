@@ -1,6 +1,7 @@
 import { OccupancyBarChart } from "../components/charts/OccupancyBarChart";
 import { PriceHeatmap } from "../components/charts/PriceHeatmap";
 import { Badge } from "../components/ui/Badge";
+import { Card } from "../components/ui/Card";
 import { PriceLineChart } from "../components/charts/PriceLineChart";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useDashboardData } from "../features/dashboard/useDashboardData";
@@ -11,6 +12,7 @@ import { MultiplierBreakdown } from "../features/pricing/MultiplierBreakdown";
 import { SearchPanel } from "../features/search/SearchPanel";
 import { WeatherWidget } from "../features/weather/WeatherWidget";
 import { useDashboardStore } from "../store/useDashboardStore";
+import { confidenceTone, formatCompsetDelta, percentileBandLabel } from "../utils/priceEngineV2";
 
 export function DashboardPage() {
   const {
@@ -21,6 +23,9 @@ export function DashboardPage() {
     highDemandDates,
     pricingReasonsByDate,
     sourceHealth,
+    usageSummary,
+    warnings,
+    hasRunAnalysis,
     isLoading,
     isFetching,
     apiError
@@ -44,6 +49,7 @@ export function DashboardPage() {
 
   const anchorRecommendation = model.pricing[0];
   const scopedPricing = model.pricing.slice(0, pricePeriod);
+  const providerUsageRows = usageSummary?.providers ?? model.providerUsage;
 
   return (
     <div className="space-y-6">
@@ -81,6 +87,26 @@ export function DashboardPage() {
         </div>
       ) : null}
 
+      {!hasRunAnalysis ? (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-700/40 dark:bg-blue-900/20 dark:text-blue-200">
+          <p className="font-semibold">Run analysis to load live market intelligence.</p>
+          <p className="mt-1 text-blue-700 dark:text-blue-300">
+            NimbleRate v2 only calls external providers when you explicitly click <strong>Run Analysis</strong>.
+          </p>
+        </div>
+      ) : null}
+
+      {warnings.length ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
+          <p className="font-semibold">Partial data mode</p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {warnings.slice(0, 4).map((warning, index) => (
+              <li key={`${warning}-${index}`}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* Refreshing banner */}
       {isFetching ? (
         <div className="flex items-center gap-2 rounded-xl border border-gold-200 bg-gold-50 px-4 py-2.5 text-sm font-medium text-gold-900 dark:border-gold-700/40 dark:bg-gold-900/20 dark:text-gold-300">
@@ -94,6 +120,39 @@ export function DashboardPage() {
         <>
           <SearchPanel />
           <KPICards kpis={model.kpis} />
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Market Anchor</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">${model.marketAnchor.anchorRate.toFixed(0)}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Compset median ${model.marketAnchor.compsetMedian.toFixed(0)} ({model.marketAnchor.source})
+              </p>
+              <p className="mt-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                {formatCompsetDelta(model.compsetPosition.deltaVsMedian)}
+              </p>
+            </Card>
+
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Compset Position</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">${model.compsetPosition.recommendedRate.toFixed(0)}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <Badge tone="neutral">{percentileBandLabel(model.compsetPosition.percentileBand)}</Badge>
+                <Badge tone="gold">Target {(model.marketAnchor.targetMarketPosition * 100).toFixed(0)}%</Badge>
+              </div>
+            </Card>
+
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Recommendation Confidence</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">{model.recommendationConfidence.score}/100</p>
+              <div className="mt-2">
+                <Badge tone={confidenceTone(model.recommendationConfidence.level)} className="capitalize">
+                  {model.recommendationConfidence.level}
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{model.recommendationConfidence.reason}</p>
+            </Card>
+          </div>
 
           <div className="grid gap-6 xl:grid-cols-3">
             <div className="xl:col-span-2">
@@ -187,6 +246,60 @@ export function DashboardPage() {
                       <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.errorSummary ?? "Healthy"}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
+            <h3 className="text-lg font-bold tracking-tight">Provider Usage & Budgets</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Track external API calls and rotate credentials/accounts when nearing quota limits.
+            </p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <th className="px-3 py-2">Provider</th>
+                    <th className="px-3 py-2">Used</th>
+                    <th className="px-3 py-2">Remaining</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Guidance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {providerUsageRows.length ? (
+                    providerUsageRows.map((row) => (
+                      <tr key={row.provider} className="border-t border-gray-100 dark:border-gray-800">
+                        <td className="px-3 py-2 font-medium uppercase">{row.provider}</td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {row.calls}/{row.quota} ({row.percentUsed.toFixed(1)}%)
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{row.remaining}</td>
+                        <td className="px-3 py-2">
+                          <Badge
+                            tone={
+                              row.status === "ok"
+                                ? "positive"
+                                : row.status === "warning"
+                                  ? "gold"
+                                  : "negative"
+                            }
+                            className="uppercase"
+                          >
+                            {row.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.recommendation}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="px-3 py-3 text-gray-500 dark:text-gray-400" colSpan={5}>
+                        Usage counters will appear after the first analysis call.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

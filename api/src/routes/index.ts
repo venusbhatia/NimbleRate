@@ -114,6 +114,10 @@ async function withRoute(res: Response, handler: () => Promise<unknown>) {
   }
 }
 
+function normalizeArrayPayload<T>(payload: unknown): T[] {
+  return Array.isArray(payload) ? (payload as T[]) : [];
+}
+
 export function registerRoutes(app: Express) {
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", service: "nimblerate-api" });
@@ -193,7 +197,8 @@ export function registerRoutes(app: Express) {
     await withRoute(res, async () => {
       const { year, countryCode } = validateQuery(req, holidaysSchema);
       const url = `${config.nagerBaseUrl}/PublicHolidays/${year}/${countryCode}`;
-      return fetchJsonCached(url, {}, "Nager public holidays request failed", CACHE_TTL.holidaysMs);
+      const payload = await fetchJsonCached<unknown>(url, {}, "Nager public holidays request failed", CACHE_TTL.holidaysMs);
+      return normalizeArrayPayload(payload);
     });
   });
 
@@ -201,7 +206,8 @@ export function registerRoutes(app: Express) {
     await withRoute(res, async () => {
       const { year, countryCode } = validateQuery(req, holidaysSchema);
       const url = `${config.nagerBaseUrl}/LongWeekend/${year}/${countryCode}`;
-      return fetchJsonCached(url, {}, "Nager long weekend request failed", CACHE_TTL.holidaysMs);
+      const payload = await fetchJsonCached<unknown>(url, {}, "Nager long weekend request failed", CACHE_TTL.holidaysMs);
+      return normalizeArrayPayload(payload);
     });
   });
 

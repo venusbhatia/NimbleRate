@@ -64,8 +64,21 @@ pnpm --dir api build
 - Stable branch: `main`
 - Integration branch: `dev`
 - Working branches: `feature/*` created from `dev`
+- Temporary CI-supported engineering branches: `codex/*`
 
 Detailed workflow: `docs/BRANCHING.md`
+
+## CI/CD
+
+- `CI` runs on pushes to `main`, `dev`, `feature/**`, and `codex/**`, plus PRs to `main`/`dev`.
+- Required CI checks:
+  - `Frontend Lint, Test & Build`
+  - `API Test & Build`
+  - `Integration Smoke`
+- `CD` runs on push to `main`, then waits for manual approval in GitHub `production` environment.
+- After approval, CD triggers Render deploy hooks for API + frontend and verifies health checks.
+
+Setup guide: `docs/CICD.md`
 
 ## Architecture
 

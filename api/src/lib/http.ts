@@ -46,14 +46,54 @@ export function buildUrl(baseUrl: string, path: string, params: Record<string, s
   return `${baseUrl}${path}${serializeParams(params)}`;
 }
 
+function parseJsonText(text: string): unknown {
+  try {
+    const parsed = JSON.parse(text);
+
+    if (typeof parsed === "string") {
+      const trimmed = parsed.trim();
+      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        try {
+          return JSON.parse(trimmed);
+        } catch {
+          return parsed;
+        }
+      }
+    }
+
+    return parsed;
+  } catch {
+    return text;
+  }
+}
+
+async function parseResponsePayload(response: Response): Promise<unknown> {
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  const text = await response.text();
+
+  if (text.length === 0) {
+    return null;
+  }
+
+  if (contentType.includes("json")) {
+    return parseJsonText(text);
+  }
+
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("\"")) {
+    return parseJsonText(trimmed);
+  }
+
+  return text;
+}
+
 export async function fetchJson<T>(
   url: string,
   init: RequestInit = {},
   errorMessage = "Upstream request failed"
 ): Promise<T> {
   const response = await fetch(url, init);
-  const contentType = response.headers.get("content-type") ?? "";
-  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+  const payload = await parseResponsePayload(response);
 
   if (!response.ok) {
     throw new UpstreamError(errorMessage, response.status, payload);

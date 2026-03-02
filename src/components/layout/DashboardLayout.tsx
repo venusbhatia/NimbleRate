@@ -16,6 +16,7 @@ export function DashboardLayout({ sidebar, header, children }: DashboardLayoutPr
           <main className="space-y-6 pb-8">{children}</main>
         </div>
       </div>
+      {/* Mobile sidebar is rendered within the Sidebar component itself */}
     </div>
   );
 }

@@ -44,9 +44,9 @@ export async function getForecastByCoordinates(latitude: number, longitude: numb
     temp: item.main.temp,
     humidity: item.main.humidity,
     pop: item.pop,
-    conditionCode: item.weather[0].id,
-    conditionText: item.weather[0].main,
-    icon: item.weather[0].icon,
+    conditionCode: item.weather[0]?.id ?? 801,
+    conditionText: item.weather[0]?.main ?? "Clouds",
+    icon: item.weather[0]?.icon ?? "02d",
     windSpeed: item.wind.speed
   }));
 

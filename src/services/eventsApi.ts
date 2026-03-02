@@ -38,7 +38,18 @@ export async function getEventsNearLocation(params: {
   classificationName?: string;
 }) {
   const result = await apiFetch<TicketmasterDiscoveryResponse>(apiPath("/api/events"), {
-    params
+    params: {
+      latitude: params.latitude,
+      longitude: params.longitude,
+      radius: params.radius ?? 25,
+      unit: params.unit ?? "miles",
+      sort: params.sort ?? "date,asc",
+      size: params.size ?? 50,
+      page: params.page ?? 0,
+      startDateTime: params.startDateTime,
+      endDateTime: params.endDateTime,
+      classificationName: params.classificationName
+    }
   });
 
   const events = (result?._embedded?.events ?? []).map(normalizeTicketmasterEvent);

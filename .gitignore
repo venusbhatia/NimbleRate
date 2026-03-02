@@ -3,6 +3,8 @@ node_modules
 dist
 .env
 .env.local
+.env.local.*
+api/.env.local.*
 coverage
 *.log
 *.tsbuildinfo

@@ -3,7 +3,8 @@ import { create } from "zustand";
 import type { HotelType } from "../types/common";
 
 interface SearchState {
-  cityCode: string;
+  cityName: string;
+  cityCode: string | null;
   countryCode: string;
   latitude: number;
   longitude: number;
@@ -13,7 +14,8 @@ interface SearchState {
   hotelType: HotelType;
   estimatedOccupancy: number;
   setCity: (payload: {
-    cityCode: string;
+    cityName: string;
+    cityCode: string | null;
     countryCode: string;
     latitude: number;
     longitude: number;
@@ -29,6 +31,7 @@ const defaultCheckInDate = format(addDays(now, 7), "yyyy-MM-dd");
 const defaultCheckOutDate = format(addDays(now, 9), "yyyy-MM-dd");
 
 export const useSearchStore = create<SearchState>((set) => ({
+  cityName: "New York",
   cityCode: "NYC",
   countryCode: "US",
   latitude: 40.7128,
@@ -40,6 +43,7 @@ export const useSearchStore = create<SearchState>((set) => ({
   estimatedOccupancy: 68,
   setCity: (payload) =>
     set({
+      cityName: payload.cityName,
       cityCode: payload.cityCode,
       countryCode: payload.countryCode,
       latitude: payload.latitude,

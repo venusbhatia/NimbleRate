@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, "feature/**", "codex/**"]
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend Lint, Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Pin pnpm
+        run: corepack prepare pnpm@10.7.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test frontend
+        run: pnpm test
+
+      - name: Build frontend
+        run: pnpm build
+
+  api:
+    name: API Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: api/pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Pin pnpm
+        run: corepack prepare pnpm@10.7.1 --activate
+
+      - name: Install API dependencies
+        run: pnpm --dir api install --frozen-lockfile
+
+      - name: Test API
+        run: pnpm --dir api test
+
+      - name: Build API
+        run: pnpm --dir api build
+
+  integration-smoke:
+    name: Integration Smoke
+    runs-on: ubuntu-latest
+    needs: [frontend, api]
+    env:
+      AMADEUS_API_KEY: ci-placeholder-amadeus-key
+      AMADEUS_API_SECRET: ci-placeholder-amadeus-secret
+      TICKETMASTER_CONSUMER_KEY: ci-placeholder-ticketmaster-key
+      OPENWEATHER_API_KEY: ci-placeholder-openweather-key
+      RATE_LIMIT_ENABLED: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: api/pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Pin pnpm
+        run: corepack prepare pnpm@10.7.1 --activate
+
+      - name: Install API dependencies
+        run: pnpm --dir api install --frozen-lockfile
+
+      - name: Build API
+        run: pnpm --dir api build
+
+      - name: Start API server
+        run: |
+          PORT=8787 node api/dist/server.js > api-server.log 2>&1 &
+          echo $! > api-server.pid
+
+      - name: Smoke check /api/health
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://localhost:8787/api/health > /tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Integration smoke failed: /api/health did not return 200 in time."
+          cat api-server.log
+          exit 1
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -f api-server.pid ]; then
+            kill "$(cat api-server.pid)" || true
+          fi

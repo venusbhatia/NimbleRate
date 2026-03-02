@@ -1,53 +1,57 @@
 import type { Request } from "express";
+import { z } from "zod";
 import { RequestValidationError } from "./http.js";
 
-function read(req: Request, key: string): string | undefined {
-  const value = req.query[key];
-  if (typeof value === "string") {
-    return value;
-  }
-  return undefined;
-}
-
-export function requireString(req: Request, key: string): string {
-  const value = read(req, key);
-  if (!value) {
-    throw new RequestValidationError(`Missing required query parameter: ${key}`);
+function coerceQueryValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value[0];
   }
   return value;
 }
 
-export function optionalString(req: Request, key: string): string | undefined {
-  return read(req, key);
-}
+export const zOptionalString = z.preprocess(
+  coerceQueryValue,
+  z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+);
 
-export function optionalNumber(req: Request, key: string): number | undefined {
-  const value = read(req, key);
-  if (value === undefined || value === "") {
-    return undefined;
+export const zRequiredString = z.preprocess(
+  coerceQueryValue,
+  z
+    .string()
+    .trim()
+    .min(1)
+);
+
+export const zOptionalNumber = z.preprocess(
+  coerceQueryValue,
+  z.coerce.number().finite().optional()
+);
+
+export const zOptionalBoolean = z.preprocess(
+  coerceQueryValue,
+  z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .transform((value) => value === true || value === "true")
+    .optional()
+);
+
+export function validateQuery<TSchema extends z.ZodTypeAny>(req: Request, schema: TSchema): z.infer<TSchema> {
+  const parsed = schema.safeParse(req.query);
+
+  if (!parsed.success) {
+    const message = parsed.error.issues
+      .map((issue) => {
+        const path = issue.path.length ? issue.path.join(".") : "query";
+        return `${path}: ${issue.message}`;
+      })
+      .join("; ");
+
+    throw new RequestValidationError(message);
   }
 
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new RequestValidationError(`Invalid numeric query parameter: ${key}`);
-  }
-
-  return parsed;
-}
-
-export function optionalBoolean(req: Request, key: string): boolean | undefined {
-  const value = read(req, key);
-  if (value === undefined || value === "") {
-    return undefined;
-  }
-
-  if (value === "true") {
-    return true;
-  }
-
-  if (value === "false") {
-    return false;
-  }
-
-  throw new RequestValidationError(`Invalid boolean query parameter: ${key}`);
+  return parsed.data;
 }

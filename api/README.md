@@ -1,32 +1,32 @@
 # API Workspace
 
-This folder is reserved for backend and integration work (Amadeus, Ticketmaster, Nager.at, OpenWeather proxying).
+Express proxy/API workspace for Amadeus, Ticketmaster, Nager.at, and OpenWeather integrations.
 
-## Purpose
+## Quick Start
 
-- Keep API/proxy development separate from the UI app in root.
-- Hide third-party API keys behind backend endpoints for production.
-- Provide one integration surface for the frontend team.
-
-## Suggested Next Step
-
-Initialize backend stack here when ready (Express/Fastify/Hono):
+1. Install dependencies:
 
 ```bash
-cd api
-pnpm install
+pnpm --dir api install
 ```
 
-Create local secrets file:
+2. Create local secrets:
 
 ```bash
-cp .env.example .env.local
+cp api/.env.example api/.env.local
 ```
 
-Start API server:
+3. Run API in development:
 
 ```bash
-pnpm dev
+pnpm dev:api
+```
+
+4. Run API checks:
+
+```bash
+pnpm --dir api test
+pnpm --dir api build
 ```
 
 ## Current Routes
@@ -45,9 +45,8 @@ pnpm dev
 - `GET /api/weather/forecast`
 - `GET /api/weather/geocode`
 
-Then expose routes like:
+## Notes
 
-- `GET /api/hotels/offers`
-- `GET /api/events`
-- `GET /api/holidays`
-- `GET /api/weather`
+- Frontend should call only backend `/api/*` routes (no direct provider keys in frontend).
+- In local development, root `vite.config.ts` proxies `/api` to `http://localhost:8787`.
+- Set `FRONTEND_ORIGIN=http://localhost:5173` in `api/.env.local` for local CORS.

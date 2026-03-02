@@ -1,9 +1,8 @@
-import { execFileSync } from "node:child_process";
+import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
 const DB_BUSY_TIMEOUT_MS = 5000;
-const LOCK_RETRY_ATTEMPTS = 4;
 
 export function resolveDatabasePath(rawPath = process.env.NIMBLERATE_DB_PATH, cwd = process.cwd()) {
   if (!rawPath || rawPath.trim().length === 0) {
@@ -27,12 +26,6 @@ export function isDatabaseLockedError(error: unknown) {
   return message.includes("database is locked") || message.includes("database table is locked");
 }
 
-function sleep(ms: number) {
-  const waitBuffer = new SharedArrayBuffer(4);
-  const waitArray = new Int32Array(waitBuffer);
-  Atomics.wait(waitArray, 0, 0, ms);
-}
-
 const databasePath = resolveDatabasePath();
 const dataDir = path.dirname(databasePath);
 
@@ -42,22 +35,17 @@ function ensureDataDir() {
   }
 }
 
-function runSqlRaw(args: string[]) {
-  ensureDataDir();
+let _db: Database.Database | null = null;
 
-  for (let attempt = 0; attempt < LOCK_RETRY_ATTEMPTS; attempt += 1) {
-    try {
-      return execFileSync("sqlite3", args, { encoding: "utf8" });
-    } catch (error) {
-      if (!isDatabaseLockedError(error) || attempt === LOCK_RETRY_ATTEMPTS - 1) {
-        throw error;
-      }
-
-      sleep(50 * (attempt + 1));
-    }
+function getDb(): Database.Database {
+  if (!_db) {
+    ensureDataDir();
+    _db = new Database(databasePath);
+    _db.pragma(`busy_timeout = ${DB_BUSY_TIMEOUT_MS}`);
+    _db.pragma("journal_mode = WAL");
+    _db.pragma("foreign_keys = OFF");
   }
-
-  return "";
+  return _db;
 }
 
 export function sqlQuote(value: string) {
@@ -65,17 +53,12 @@ export function sqlQuote(value: string) {
 }
 
 export function executeSql(sql: string) {
-  runSqlRaw(["-cmd", `.timeout ${DB_BUSY_TIMEOUT_MS}`, databasePath, sql]);
+  getDb().exec(sql);
 }
 
 export function queryJson<T>(sql: string): T[] {
-  const raw = runSqlRaw(["-cmd", `.timeout ${DB_BUSY_TIMEOUT_MS}`, "-json", databasePath, sql]).trim();
-  if (!raw) {
-    return [];
-  }
-
   try {
-    return JSON.parse(raw) as T[];
+    return getDb().prepare(sql).all() as T[];
   } catch {
     return [];
   }

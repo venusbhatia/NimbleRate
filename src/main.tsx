@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "react-error-boundary";
 import App from "./App";
+import { AppErrorFallback } from "./components/layout/AppErrorFallback";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -44,7 +45,7 @@ function ErrorFallback() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ErrorBoundary fallback={<ErrorFallback />}>
+    <ErrorBoundary fallback={<AppErrorFallback />}>
       <QueryClientProvider client={queryClient}>
         <App />
       </QueryClientProvider>

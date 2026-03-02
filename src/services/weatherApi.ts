@@ -1,20 +1,14 @@
-import type { GeocodingResult, WeatherDailySummary, WeatherForecast, WeatherPoint } from "../types/weather";
+import type {
+  GeocodingResult,
+  OpenWeatherForecastResponse,
+  WeatherDailySummary,
+  WeatherForecast,
+  WeatherPoint
+} from "../types/weather";
 import type { WeatherCategory } from "../types/common";
 import { format } from "date-fns";
 import { apiFetch } from "./apiClient";
-
-const OPENWEATHER_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast";
-const OPENWEATHER_GEOCODING_URL = "https://api.openweathermap.org/geo/1.0/direct";
-
-function getOpenWeatherApiKey() {
-  const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Missing OpenWeather API key. Set VITE_OPENWEATHER_API_KEY.");
-  }
-
-  return apiKey;
-}
+import { apiPath } from "./backendBaseUrl";
 
 export function mapWeatherCodeToCategory(code: number): WeatherCategory {
   if (code === 800) return "sunny";
@@ -28,13 +22,10 @@ export function mapWeatherCodeToCategory(code: number): WeatherCategory {
 }
 
 export async function geocodeCity(query: string, limit = 5) {
-  const apiKey = getOpenWeatherApiKey();
-
-  return apiFetch<GeocodingResult[]>(OPENWEATHER_GEOCODING_URL, {
+  return apiFetch<GeocodingResult[]>(apiPath("/api/weather/geocode"), {
     params: {
       q: query,
-      limit,
-      appid: apiKey
+      limit
     }
   });
 }
@@ -45,9 +36,8 @@ export async function getForecastByCoordinates(latitude: number, longitude: numb
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const response = await apiFetch<Record<string, any>>(OPENWEATHER_FORECAST_URL, {
     params: {
-      lat: latitude,
-      lon: longitude,
-      appid: apiKey,
+      latitude,
+      longitude,
       units: "metric"
     }
   });

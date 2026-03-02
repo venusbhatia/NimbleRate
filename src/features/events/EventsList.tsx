@@ -5,9 +5,10 @@ import type { TicketmasterEvent } from "../../types/events";
 
 interface EventsListProps {
   events: TicketmasterEvent[];
+  limit?: number;
 }
 
-export function EventsList({ events }: EventsListProps) {
+export function EventsList({ events, limit = 6 }: EventsListProps) {
   return (
     <Card className="animate-slideUp bg-white/95 dark:bg-neutral-900/95">
       <div className="mb-4 flex items-center justify-between">

@@ -1,6 +1,6 @@
-import ngeohash from "ngeohash";
 import { apiFetch } from "./apiClient";
-import type { TicketmasterEvent, TicketmasterEventsPage } from "../types/events";
+import { apiPath } from "./backendBaseUrl";
+import type { TicketmasterDiscoveryResponse, TicketmasterEvent, TicketmasterEventsPage, TicketmasterRawEvent } from "../types/events";
 
 const TICKETMASTER_BASE_URL = "https://app.ticketmaster.com/discovery/v2";
 
@@ -24,7 +24,7 @@ function normalizeTicketmasterEvent(raw: Record<string, any>): TicketmasterEvent
   return {
     id: raw.id,
     name: raw.name,
-    date: raw?.dates?.start?.localDate ?? raw?.dates?.start?.dateTime,
+    date: raw?.dates?.start?.localDate ?? raw?.dates?.start?.dateTime ?? "",
     status: raw?.dates?.status?.code ?? "unknown",
     segment: classification?.segment?.name,
     genre: classification?.genre?.name,

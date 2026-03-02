@@ -34,3 +34,27 @@ export interface GeocodingResult {
   country: string;
   state?: string;
 }
+
+export interface OpenWeatherForecastResponse {
+  list: Array<{
+    dt_txt: string;
+    main: {
+      temp: number;
+      humidity: number;
+    };
+    pop: number;
+    weather: Array<{
+      id: number;
+      main: string;
+      icon: string;
+    }>;
+    wind: {
+      speed: number;
+    };
+  }>;
+  city: {
+    name: string;
+    country: string;
+    timezone: number;
+  };
+}

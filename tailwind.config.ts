@@ -5,7 +5,16 @@ const config: Config = {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        heading: ["Inter", "system-ui", "sans-serif"],
+        body: ["Inter", "system-ui", "sans-serif"]
+      },
       colors: {
+        brand: {
+          charcoal: "#32302F",
+          gold: "#E5A93D",
+          emerald: "#059669"
+        },
         dune: {
           50: "#f7f6f5",
           100: "#efecea",
@@ -34,7 +43,8 @@ const config: Config = {
       },
       boxShadow: {
         card: "0 1px 2px 0 rgb(16 24 40 / 0.06), 0 1px 3px 0 rgb(16 24 40 / 0.1)",
-        "card-hover": "0 10px 24px -12px rgb(17 24 39 / 0.35)"
+        "card-hover": "0 10px 24px -12px rgb(17 24 39 / 0.35)",
+        glow: "0 0 40px -8px rgb(229 169 61 / 0.25)"
       },
       animation: {
         fadeIn: "fadeIn 220ms ease-out",

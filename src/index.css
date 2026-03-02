@@ -4,6 +4,13 @@
 
 :root {
   font-family: Inter, sans-serif;
+  --brand-charcoal: #32302f;
+  --brand-gold: #e5a93d;
+  --brand-emerald: #059669;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 html,
@@ -14,9 +21,99 @@ body,
 
 body {
   margin: 0;
-  background: radial-gradient(circle at top right, #fff9e8 0%, #ffffff 35%, #f9fafb 100%);
+  background: radial-gradient(
+    circle at top right,
+    #fff9e8 0%,
+    #ffffff 35%,
+    #f9fafb 100%
+  );
 }
 
 .dark body {
-  background: radial-gradient(circle at top right, #272115 0%, #111111 40%, #161616 100%);
+  background: radial-gradient(
+    circle at top right,
+    #272115 0%,
+    #111111 40%,
+    #161616 100%
+  );
+}
+
+/* ---- Form controls dark mode ---- */
+
+.dark select,
+.dark input[type="date"],
+.dark input[type="text"],
+.dark input[type="number"] {
+  background-color: #262626;
+  border-color: #404040;
+  color: #f5f5f5;
+}
+
+.dark input[type="range"] {
+  background-color: #44381a;
+}
+
+/* ---- Landing page utilities ---- */
+
+@keyframes hero-fade {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-hero-fade {
+  animation: hero-fade 700ms ease-out both;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-reveal {
+  animation: reveal 500ms ease-out both;
+}
+
+.stagger-1 {
+  animation-delay: 100ms;
+}
+.stagger-2 {
+  animation-delay: 200ms;
+}
+.stagger-3 {
+  animation-delay: 300ms;
+}
+.stagger-4 {
+  animation-delay: 400ms;
+}
+.stagger-5 {
+  animation-delay: 500ms;
+}
+.stagger-6 {
+  animation-delay: 600ms;
 }

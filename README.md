@@ -37,9 +37,22 @@ Set these keys in `.env.local`:
 pnpm dev
 ```
 
+## Team Workflow
+
+- Stable branch: `main`
+- Integration branch: `dev`
+- Working branches: `feature/*` created from `dev`
+
+Detailed workflow: `docs/BRANCHING.md`
+
 ## Architecture
 
 ```text
+/
+├── src/                # UI app (Vite + React)
+├── api/                # Backend/API integration workspace
+└── docs/
+
 src/
 ├── components/ui
 ├── components/layout

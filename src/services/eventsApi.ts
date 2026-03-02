@@ -14,7 +14,8 @@ function getTicketmasterApiKey() {
   return apiKey;
 }
 
-function normalizeTicketmasterEvent(raw: any): TicketmasterEvent {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeTicketmasterEvent(raw: Record<string, any>): TicketmasterEvent {
   const venue = raw?._embedded?.venues?.[0];
   const classification = raw?.classifications?.[0];
   const priceRange = raw?.priceRanges?.[0];
@@ -52,7 +53,8 @@ export async function getEventsNearLocation(params: {
   const apiKey = getTicketmasterApiKey();
   const geoPoint = ngeohash.encode(params.latitude, params.longitude, 7);
 
-  const result = await apiFetch<any>(`${TICKETMASTER_BASE_URL}/events.json`, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await apiFetch<Record<string, any>>(`${TICKETMASTER_BASE_URL}/events.json`, {
     params: {
       apikey: apiKey,
       geoPoint,

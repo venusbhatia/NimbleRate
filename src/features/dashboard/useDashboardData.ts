@@ -237,7 +237,6 @@ export function useDashboardData() {
   }, [
     offersQuery.data,
     params.checkInDate,
-    params.countryCode,
     params.estimatedOccupancy,
     params.hotelType,
     eventsQuery.data?.events,

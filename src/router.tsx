@@ -1,24 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode, type AnchorHTMLAttributes } from "react";
-
-function getHash() {
-  return window.location.hash.replace(/^#\/?/, "");
-}
-
-export function useRoute() {
-  const [hash, setHash] = useState(getHash);
-
-  useEffect(() => {
-    const onHashChange = () => setHash(getHash());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
-
-  const navigate = useCallback((to: string) => {
-    window.location.hash = to;
-  }, []);
-
-  return useMemo(() => ({ route: hash, navigate }), [hash, navigate]);
-}
+import type { AnchorHTMLAttributes, ReactNode } from "react";
 
 interface LinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
   to: string;

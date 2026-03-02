@@ -2,20 +2,7 @@ import { apiFetch } from "./apiClient";
 import { apiPath } from "./backendBaseUrl";
 import type { TicketmasterDiscoveryResponse, TicketmasterEvent, TicketmasterEventsPage, TicketmasterRawEvent } from "../types/events";
 
-const TICKETMASTER_BASE_URL = "https://app.ticketmaster.com/discovery/v2";
-
-function getTicketmasterApiKey() {
-  const apiKey = import.meta.env.VITE_TICKETMASTER_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Missing Ticketmaster API key. Set VITE_TICKETMASTER_API_KEY.");
-  }
-
-  return apiKey;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeTicketmasterEvent(raw: Record<string, any>): TicketmasterEvent {
+function normalizeTicketmasterEvent(raw: TicketmasterRawEvent): TicketmasterEvent {
   const venue = raw?._embedded?.venues?.[0];
   const classification = raw?.classifications?.[0];
   const priceRange = raw?.priceRanges?.[0];
@@ -50,15 +37,10 @@ export async function getEventsNearLocation(params: {
   sort?: "date,asc" | "date,desc" | "relevance,desc" | "distance,asc" | "name,asc";
   classificationName?: string;
 }) {
-  const apiKey = getTicketmasterApiKey();
-  const geoPoint = ngeohash.encode(params.latitude, params.longitude, 7);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await apiFetch<Record<string, any>>(`${TICKETMASTER_BASE_URL}/events.json`, {
+  const result = await apiFetch<TicketmasterDiscoveryResponse>(apiPath("/api/events"), {
     params: {
-      apikey: apiKey,
-      geoPoint,
-      latlong: `${params.latitude},${params.longitude}`,
+      latitude: params.latitude,
+      longitude: params.longitude,
       radius: params.radius ?? 25,
       unit: params.unit ?? "miles",
       sort: params.sort ?? "date,asc",

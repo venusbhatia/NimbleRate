@@ -31,10 +31,7 @@ export async function geocodeCity(query: string, limit = 5) {
 }
 
 export async function getForecastByCoordinates(latitude: number, longitude: number) {
-  const apiKey = getOpenWeatherApiKey();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const response = await apiFetch<Record<string, any>>(OPENWEATHER_FORECAST_URL, {
+  const response = await apiFetch<OpenWeatherForecastResponse>(apiPath("/api/weather/forecast"), {
     params: {
       latitude,
       longitude,
@@ -42,15 +39,14 @@ export async function getForecastByCoordinates(latitude: number, longitude: numb
     }
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const points: WeatherPoint[] = response.list.map((item: Record<string, any>) => ({
+  const points: WeatherPoint[] = response.list.map((item) => ({
     timestamp: item.dt_txt,
     temp: item.main.temp,
     humidity: item.main.humidity,
     pop: item.pop,
-    conditionCode: item.weather[0].id,
-    conditionText: item.weather[0].main,
-    icon: item.weather[0].icon,
+    conditionCode: item.weather[0]?.id ?? 801,
+    conditionText: item.weather[0]?.main ?? "Clouds",
+    icon: item.weather[0]?.icon ?? "02d",
     windSpeed: item.wind.speed
   }));
 

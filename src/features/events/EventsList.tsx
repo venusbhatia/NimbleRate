@@ -24,7 +24,7 @@ export function EventsList({ events, limit = 6 }: EventsListProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {events.slice(0, 6).map((event) => (
+          {events.slice(0, limit).map((event) => (
             <div key={event.id} className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div className="mb-2 flex items-start justify-between gap-2">
                 <p className="line-clamp-2 text-sm font-semibold">{event.name}</p>

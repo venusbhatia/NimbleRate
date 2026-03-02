@@ -1,8 +1,6 @@
 import { OccupancyBarChart } from "../components/charts/OccupancyBarChart";
 import { PriceHeatmap } from "../components/charts/PriceHeatmap";
 import { PriceLineChart } from "../components/charts/PriceLineChart";
-import { Badge } from "../components/ui/Badge";
-import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useDashboardData } from "../features/dashboard/useDashboardData";
 import { EventsList } from "../features/events/EventsList";
@@ -15,6 +13,7 @@ import { useDashboardStore } from "../store/useDashboardStore";
 export function DashboardPage() {
   const { model, eventDates, isLoading, isFetching } = useDashboardData();
   const activeNav = useDashboardStore((state) => state.activeNav);
+  const pricePeriod = useDashboardStore((state) => state.pricePeriod);
 
   if (isLoading) {
     return (
@@ -32,17 +31,6 @@ export function DashboardPage() {
 
   const anchorRecommendation = model.pricing[0];
   const scopedPricing = model.pricing.slice(0, pricePeriod);
-  const scopedEvents = model.events.slice(0, Math.max(6, pricePeriod));
-  const hasEvents = model.events.length > 0;
-  const hasWeather = model.weather.length > 0;
-  const viewTitle =
-    activeNav === "dashboard"
-      ? "Market Overview"
-      : activeNav === "calendar"
-        ? "Calendar Intelligence"
-        : activeNav === "events"
-          ? "Event Demand Radar"
-          : "Workspace Settings";
 
   return (
     <div className="space-y-6">
@@ -76,15 +64,15 @@ export function DashboardPage() {
         <>
           <PriceHeatmap pricing={model.pricing} eventDates={eventDates} />
           <div className="grid gap-6 xl:grid-cols-2">
-            <PriceLineChart data={model.pricing} />
-            <OccupancyBarChart data={model.pricing} />
+            <PriceLineChart data={scopedPricing} />
+            <OccupancyBarChart data={scopedPricing} />
           </div>
         </>
       ) : null}
 
       {/* ===== EVENTS SECTION ===== */}
       {activeNav === "events" ? (
-        <EventsList events={model.events} />
+        <EventsList events={model.events} limit={Math.max(6, pricePeriod)} />
       ) : null}
 
       {/* ===== SETTINGS SECTION ===== */}

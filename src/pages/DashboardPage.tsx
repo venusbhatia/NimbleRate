@@ -15,6 +15,7 @@ import { useDashboardStore } from "../store/useDashboardStore";
 export function DashboardPage() {
   const { model, eventDates, isLoading, isFetching } = useDashboardData();
   const activeNav = useDashboardStore((state) => state.activeNav);
+  const pricePeriod = useDashboardStore((state) => state.pricePeriod);
 
   if (isLoading) {
     return (

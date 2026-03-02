@@ -1,7 +1,7 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect } from "react";
 import { useDashboardStore } from "../../store/useDashboardStore";
-import { dashboardNavItems } from "./Sidebar";
+import { dashboardNavItems } from "./navigation";
 import { Button } from "../ui/Button";
 import { cn } from "../ui/cn";
 

@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import ngeohash from "ngeohash";
 import { config } from "../config.js";
 import { amadeusGet } from "../lib/amadeus.js";

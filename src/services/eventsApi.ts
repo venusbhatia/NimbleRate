@@ -1,8 +1,8 @@
 import { apiFetch } from "./apiClient";
 import { apiPath } from "./backendBaseUrl";
-import type { TicketmasterEvent, TicketmasterEventsPage } from "../types/events";
+import type { TicketmasterDiscoveryResponse, TicketmasterEvent, TicketmasterEventsPage, TicketmasterRawEvent } from "../types/events";
 
-function normalizeTicketmasterEvent(raw: any): TicketmasterEvent {
+function normalizeTicketmasterEvent(raw: TicketmasterRawEvent): TicketmasterEvent {
   const venue = raw?._embedded?.venues?.[0];
   const classification = raw?.classifications?.[0];
   const priceRange = raw?.priceRanges?.[0];
@@ -11,7 +11,7 @@ function normalizeTicketmasterEvent(raw: any): TicketmasterEvent {
   return {
     id: raw.id,
     name: raw.name,
-    date: raw?.dates?.start?.localDate ?? raw?.dates?.start?.dateTime,
+    date: raw?.dates?.start?.localDate ?? raw?.dates?.start?.dateTime ?? "",
     status: raw?.dates?.status?.code ?? "unknown",
     segment: classification?.segment?.name,
     genre: classification?.genre?.name,
@@ -37,7 +37,7 @@ export async function getEventsNearLocation(params: {
   sort?: "date,asc" | "date,desc" | "relevance,desc" | "distance,asc" | "name,asc";
   classificationName?: string;
 }) {
-  const result = await apiFetch<any>(apiPath("/api/events"), {
+  const result = await apiFetch<TicketmasterDiscoveryResponse>(apiPath("/api/events"), {
     params
   });
 

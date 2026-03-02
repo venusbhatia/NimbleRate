@@ -1,13 +1,7 @@
-import { CalendarRange, ChartNoAxesCombined, Cog, Sparkles, Ticket } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useDashboardStore } from "../../store/useDashboardStore";
+import { dashboardNavItems } from "./navigation";
 import { cn } from "../ui/cn";
-
-export const dashboardNavItems = [
-  { id: "dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
-  { id: "calendar", label: "Calendar", icon: CalendarRange },
-  { id: "events", label: "Events", icon: Ticket },
-  { id: "settings", label: "Settings", icon: Cog }
-] as const;
 
 export function Sidebar() {
   const activeNav = useDashboardStore((state) => state.activeNav);

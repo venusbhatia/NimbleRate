@@ -1,4 +1,10 @@
-import type { GeocodingResult, WeatherDailySummary, WeatherForecast, WeatherPoint } from "../types/weather";
+import type {
+  GeocodingResult,
+  OpenWeatherForecastResponse,
+  WeatherDailySummary,
+  WeatherForecast,
+  WeatherPoint
+} from "../types/weather";
 import type { WeatherCategory } from "../types/common";
 import { format } from "date-fns";
 import { apiFetch } from "./apiClient";
@@ -25,7 +31,7 @@ export async function geocodeCity(query: string, limit = 5) {
 }
 
 export async function getForecastByCoordinates(latitude: number, longitude: number) {
-  const response = await apiFetch<any>(apiPath("/api/weather/forecast"), {
+  const response = await apiFetch<OpenWeatherForecastResponse>(apiPath("/api/weather/forecast"), {
     params: {
       latitude,
       longitude,
@@ -33,7 +39,7 @@ export async function getForecastByCoordinates(latitude: number, longitude: numb
     }
   });
 
-  const points: WeatherPoint[] = response.list.map((item: any) => ({
+  const points: WeatherPoint[] = response.list.map((item) => ({
     timestamp: item.dt_txt,
     temp: item.main.temp,
     humidity: item.main.humidity,

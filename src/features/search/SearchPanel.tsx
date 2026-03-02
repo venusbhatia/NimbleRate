@@ -11,6 +11,15 @@ import { majorLocations } from "./majorLocations";
 
 const quickCityPresets: LocationOption[] = [
   {
+    id: "aus-us",
+    cityName: "Austin",
+    cityCode: "AUS",
+    countryCode: "US",
+    latitude: 30.2672,
+    longitude: -97.7431,
+    label: "Austin, US"
+  },
+  {
     id: "nyc-us",
     cityName: "New York",
     cityCode: "NYC",
@@ -27,15 +36,6 @@ const quickCityPresets: LocationOption[] = [
     latitude: 51.5074,
     longitude: -0.1278,
     label: "London, GB"
-  },
-  {
-    id: "par-fr",
-    cityName: "Paris",
-    cityCode: "PAR",
-    countryCode: "FR",
-    latitude: 48.8566,
-    longitude: 2.3522,
-    label: "Paris, FR"
   },
   {
     id: "dxb-ae",

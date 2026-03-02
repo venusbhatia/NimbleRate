@@ -10,6 +10,8 @@ interface PriceCalendarProps {
   longWeekendDates: Set<string>;
   highDemandDates: Set<string>;
   pricingReasonsByDate: Map<string, string[]>;
+  selectedDate: string | null;
+  onSelectDate: (date: string) => void;
 }
 
 export function PriceCalendar({
@@ -18,7 +20,9 @@ export function PriceCalendar({
   holidayDates,
   longWeekendDates,
   highDemandDates,
-  pricingReasonsByDate
+  pricingReasonsByDate,
+  selectedDate,
+  onSelectDate
 }: PriceCalendarProps) {
   const rates = pricing.map((item) => item.finalRate);
   const minRate = Math.min(...rates);
@@ -61,11 +65,17 @@ export function PriceCalendar({
           const reasons = pricingReasonsByDate.get(day.date) ?? ["Baseline market conditions"];
 
           return (
-            <div
+            <button
               key={day.date}
+              type="button"
+              onClick={() => onSelectDate(day.date)}
               title={`Why this day moved: ${reasons.join(", ")}`}
-              className={`relative rounded-xl border p-2 text-xs ${getPriceColorClass(day.finalRate, minRate, maxRate)} ${
+              className={`relative rounded-xl border p-2 text-left text-xs transition-all duration-150 ${getPriceColorClass(day.finalRate, minRate, maxRate)} ${
                 isLongWeekend ? "border-amber-300 dark:border-amber-600/40" : "border-white/60 dark:border-white/10"
+              } ${
+                selectedDate === day.date
+                  ? "ring-2 ring-gold-400 shadow-card-hover dark:ring-gold-500/70"
+                  : "hover:shadow-card-hover"
               }`}
             >
               <p className="font-semibold">{format(parseISO(day.date), "d")}</p>
@@ -76,7 +86,7 @@ export function PriceCalendar({
                 {isLongWeekend ? <span className="h-2 w-2 rounded-full bg-amber-500" /> : null}
                 {isHighDemand ? <span className="h-2 w-2 rounded-full bg-red-500" /> : null}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>

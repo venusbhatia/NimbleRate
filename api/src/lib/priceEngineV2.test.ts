@@ -35,6 +35,14 @@ describe("priceEngineV2", () => {
     expect(output.anchorRate).toBeGreaterThanOrEqual(output.compsetP25);
     expect(output.anchorRate).toBeLessThanOrEqual(output.compsetP75);
     expect(output.recommendations).toHaveLength(7);
+    const first = output.recommendations[0];
+    const contributionTotal = Object.values(first.explainability.factors).reduce(
+      (sum, factor) => sum + factor.contribution,
+      0
+    );
+    expect(first.explainability.headline.length).toBeGreaterThan(0);
+    expect(contributionTotal).toBeGreaterThan(98);
+    expect(contributionTotal).toBeLessThan(102);
   });
 
   it("respects min/max guardrails and daily-change cap", () => {
@@ -50,6 +58,7 @@ describe("priceEngineV2", () => {
     output.recommendations.forEach((row) => {
       expect(row.finalRate).toBeGreaterThanOrEqual(140);
       expect(row.finalRate).toBeLessThanOrEqual(220);
+      expect(row.explainability.guardrails).toBeDefined();
     });
 
     for (let i = 1; i < output.recommendations.length; i += 1) {
@@ -57,6 +66,12 @@ describe("priceEngineV2", () => {
       const current = output.recommendations[i].finalRate;
       expect(Math.abs(current - prev)).toBeLessThanOrEqual(Math.ceil(prev * 0.2));
     }
+
+    expect(
+      output.recommendations.some(
+        (row) => row.explainability.guardrails.minHit || row.explainability.guardrails.maxHit
+      )
+    ).toBe(true);
   });
 
   it("summarizes rate collections", () => {

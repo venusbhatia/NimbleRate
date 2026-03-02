@@ -354,9 +354,20 @@ function saveAnalysisRun(marketKey: string, confidence: string, anchorRate: numb
   `);
 }
 
-function statusFromWarning(hasWarning: boolean, hasError: boolean) {
-  if (hasError) return "error";
-  if (hasWarning) return "loading";
+type SourceHealthStatus = "ok" | "loading" | "error";
+type SourceHealthDiagnostics = {
+  degraded: boolean;
+  errors: string[];
+  hasData: boolean;
+};
+
+function resolveSourceStatus(diagnostics: SourceHealthDiagnostics): SourceHealthStatus {
+  if (diagnostics.errors.length > 0 && !diagnostics.hasData) {
+    return "error";
+  }
+  if (diagnostics.degraded || diagnostics.errors.length > 0) {
+    return "loading";
+  }
   return "ok";
 }
 
@@ -575,6 +586,13 @@ export function registerRoutes(app: Express) {
       const endDate = dateRange[dateRange.length - 1];
 
       const warnings: string[] = [];
+      const fallbacksUsed = new Set<string>();
+      const sourceDiagnostics: Record<"Hotels" | "Events" | "Holidays" | "Weather", SourceHealthDiagnostics> = {
+        Hotels: { degraded: false, errors: [], hasData: false },
+        Events: { degraded: false, errors: [], hasData: false },
+        Holidays: { degraded: false, errors: [], hasData: false },
+        Weather: { degraded: false, errors: [], hasData: false }
+      };
       let compsetSource: "makcorps" | "amadeus" | "fallback" = "fallback";
 
       let compsetHotels: Array<{
@@ -599,9 +617,13 @@ export function registerRoutes(app: Express) {
             medianRate: hotel.medianRate,
             otaRates: hotel.otaRates
           }));
+          sourceDiagnostics.Hotels.hasData = true;
         }
       } catch (error) {
-        warnings.push(`Makcorps unavailable: ${toApiError(error).message}`);
+        const message = `Makcorps unavailable: ${toApiError(error).message}`;
+        warnings.push(message);
+        sourceDiagnostics.Hotels.degraded = true;
+        sourceDiagnostics.Hotels.errors.push(message);
       }
 
       if (!compsetHotels.length) {
@@ -645,14 +667,22 @@ export function registerRoutes(app: Express) {
             if (normalized.length) {
               compsetSource = "amadeus";
               compsetHotels = normalized;
+              sourceDiagnostics.Hotels.hasData = true;
+              sourceDiagnostics.Hotels.degraded = true;
+              fallbacksUsed.add("makcorps_fallback_amadeus");
             }
           }
         } catch (error) {
-          warnings.push(`Amadeus compset fallback unavailable: ${toApiError(error).message}`);
+          const message = `Amadeus compset fallback unavailable: ${toApiError(error).message}`;
+          warnings.push(message);
+          sourceDiagnostics.Hotels.errors.push(message);
         }
       }
 
       if (!compsetHotels.length) {
+        fallbacksUsed.add("compset_fallback_static");
+        sourceDiagnostics.Hotels.degraded = true;
+        sourceDiagnostics.Hotels.hasData = true;
         compsetHotels = [
           {
             hotelId: "fallback-1",
@@ -684,28 +714,40 @@ export function registerRoutes(app: Express) {
       const paceByDate = new Map(paceRows.map((entry) => [entry.date, entry]));
 
       const holidayYears = new Set([parseISO(params.checkInDate).getFullYear(), parseISO(endDate).getFullYear()]);
-      const holidayPayloads = await Promise.all(
-        Array.from(holidayYears).map(async (year) => {
-          const [publicHolidays, longWeekends] = await Promise.all([
-            fetchJsonCached<unknown>(
-              `${config.nagerBaseUrl}/PublicHolidays/${year}/${params.countryCode}`,
-              {},
-              "Nager public holidays request failed",
-              CACHE_TTL.holidaysMs
-            ),
-            fetchJsonCached<unknown>(
-              `${config.nagerBaseUrl}/LongWeekend/${year}/${params.countryCode}`,
-              {},
-              "Nager long weekend request failed",
-              CACHE_TTL.holidaysMs
-            )
-          ]);
-          return {
-            publicHolidays: normalizeArrayPayload<Record<string, unknown>>(publicHolidays),
-            longWeekends: normalizeArrayPayload<Record<string, unknown>>(longWeekends)
-          };
-        })
-      );
+      let holidayPayloads: Array<{
+        publicHolidays: Array<Record<string, unknown>>;
+        longWeekends: Array<Record<string, unknown>>;
+      }> = [];
+      try {
+        holidayPayloads = await Promise.all(
+          Array.from(holidayYears).map(async (year) => {
+            const [publicHolidays, longWeekends] = await Promise.all([
+              fetchJsonCached<unknown>(
+                `${config.nagerBaseUrl}/PublicHolidays/${year}/${params.countryCode}`,
+                {},
+                "Nager public holidays request failed",
+                CACHE_TTL.holidaysMs
+              ),
+              fetchJsonCached<unknown>(
+                `${config.nagerBaseUrl}/LongWeekend/${year}/${params.countryCode}`,
+                {},
+                "Nager long weekend request failed",
+                CACHE_TTL.holidaysMs
+              )
+            ]);
+            return {
+              publicHolidays: normalizeArrayPayload<Record<string, unknown>>(publicHolidays),
+              longWeekends: normalizeArrayPayload<Record<string, unknown>>(longWeekends)
+            };
+          })
+        );
+        sourceDiagnostics.Holidays.hasData = true;
+      } catch (error) {
+        const message = `Holidays feed unavailable: ${toApiError(error).message}`;
+        warnings.push(message);
+        sourceDiagnostics.Holidays.degraded = true;
+        sourceDiagnostics.Holidays.errors.push(message);
+      }
 
       const holidayDates = new Set<string>();
       holidayPayloads.flatMap((entry) => entry.publicHolidays).forEach((holiday) => {
@@ -727,18 +769,27 @@ export function registerRoutes(app: Express) {
         }
       });
 
-      const weatherPayload = await fetchJsonCached<unknown>(
-        buildUrl("https://api.openweathermap.org/data/2.5", "/forecast", {
-          lat: latitude,
-          lon: longitude,
-          appid: config.openWeatherApiKey,
-          units: "metric"
-        }),
-        {},
-        "OpenWeather forecast request failed",
-        CACHE_TTL.weatherMs
-      );
-      const weatherSummary = toWeatherSummary(weatherPayload);
+      let weatherSummary: ReturnType<typeof toWeatherSummary> = [];
+      try {
+        const weatherPayload = await fetchJsonCached<unknown>(
+          buildUrl("https://api.openweathermap.org/data/2.5", "/forecast", {
+            lat: latitude,
+            lon: longitude,
+            appid: config.openWeatherApiKey,
+            units: "metric"
+          }),
+          {},
+          "OpenWeather forecast request failed",
+          CACHE_TTL.weatherMs
+        );
+        weatherSummary = toWeatherSummary(weatherPayload);
+        sourceDiagnostics.Weather.hasData = true;
+      } catch (error) {
+        const message = `Weather feed unavailable: ${toApiError(error).message}`;
+        warnings.push(message);
+        sourceDiagnostics.Weather.degraded = true;
+        sourceDiagnostics.Weather.errors.push(message);
+      }
       const weatherByDate = new Map(weatherSummary.map((entry) => [entry.date, entry.category as V2WeatherCategory]));
 
       let events: TicketmasterEvent[] = [];
@@ -777,8 +828,12 @@ export function registerRoutes(app: Express) {
             eventImpactByDate.set(key, Math.max(current, event.impactScore));
           });
         }
+        sourceDiagnostics.Events.hasData = true;
       } catch (error) {
-        warnings.push(`PredictHQ unavailable: ${toApiError(error).message}`);
+        const message = `PredictHQ unavailable: ${toApiError(error).message}`;
+        warnings.push(message);
+        sourceDiagnostics.Events.degraded = true;
+        sourceDiagnostics.Events.errors.push(message);
       }
 
       if (!events.length) {
@@ -798,8 +853,13 @@ export function registerRoutes(app: Express) {
             const scaled = Math.min(100, Math.round(event.popularityScore * 2.2));
             eventImpactByDate.set(key, Math.max(eventImpactByDate.get(key) ?? 0, scaled));
           });
+          sourceDiagnostics.Events.hasData = true;
+          sourceDiagnostics.Events.degraded = true;
+          fallbacksUsed.add("predicthq_fallback_ticketmaster");
         } catch (error) {
-          warnings.push(`Ticketmaster fallback unavailable: ${toApiError(error).message}`);
+          const message = `Ticketmaster fallback unavailable: ${toApiError(error).message}`;
+          warnings.push(message);
+          sourceDiagnostics.Events.errors.push(message);
         }
       }
 
@@ -841,6 +901,49 @@ export function registerRoutes(app: Express) {
       const pricingReasonsByDate = Object.fromEntries(
         engineOutput.recommendations.map((entry) => [entry.date, entry.reasons])
       );
+      const explainabilityByDate = Object.fromEntries(
+        engineOutput.recommendations.map((entry) => [entry.date, entry.explainability])
+      );
+
+      const hotelsErrorSummary =
+        sourceDiagnostics.Hotels.errors[0] ??
+        (fallbacksUsed.has("compset_fallback_static")
+          ? "Using static compset baseline fallback."
+          : fallbacksUsed.has("makcorps_fallback_amadeus")
+            ? "Makcorps unavailable; using Amadeus compset fallback."
+            : undefined);
+      const eventsErrorSummary =
+        sourceDiagnostics.Events.errors[0] ??
+        (fallbacksUsed.has("predicthq_fallback_ticketmaster")
+          ? "PredictHQ unavailable; using Ticketmaster fallback."
+          : undefined);
+
+      const sourceHealth = [
+        {
+          source: "Hotels",
+          status: resolveSourceStatus(sourceDiagnostics.Hotels),
+          errorSummary: hotelsErrorSummary,
+          lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "Events",
+          status: resolveSourceStatus(sourceDiagnostics.Events),
+          errorSummary: eventsErrorSummary,
+          lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "Holidays",
+          status: resolveSourceStatus(sourceDiagnostics.Holidays),
+          errorSummary: sourceDiagnostics.Holidays.errors[0],
+          lastUpdated: new Date().toISOString()
+        },
+        {
+          source: "Weather",
+          status: resolveSourceStatus(sourceDiagnostics.Weather),
+          errorSummary: sourceDiagnostics.Weather.errors[0],
+          lastUpdated: new Date().toISOString()
+        }
+      ] as const;
 
       const adr = average(pricing.map((entry) => entry.finalRate));
       const occupancy = average(paceRows.map((entry) => entry.occupancyRate)) || estimatedOccupancy;
@@ -855,7 +958,13 @@ export function registerRoutes(app: Express) {
       const compsetSummary = summarizeRates(flattenedCompset.map((entry) => entry.rate));
       const deltaVsMedian = pricing[0] ? pricing[0].finalRate - compsetSummary.medianRate : 0;
       const usage = getUsageSummary();
-      const dataConfidence = engineOutput.confidence === "high" ? 88 : engineOutput.confidence === "medium" ? 68 : 45;
+      const baseDataConfidence = engineOutput.confidence === "high" ? 88 : engineOutput.confidence === "medium" ? 68 : 45;
+      const degradedCount = sourceHealth.filter((row) => row.status !== "ok").length;
+      const dataConfidence = Math.max(20, Math.min(98, baseDataConfidence - degradedCount * 8));
+      const missingSources = sourceHealth
+        .filter((row) => row.status === "error")
+        .map((row) => row.source);
+      const availableSources = sourceHealth.filter((row) => row.status !== "error").length;
 
       const model = {
         pricing,
@@ -884,10 +993,10 @@ export function registerRoutes(app: Express) {
           },
           dataQuality: {
             confidenceScore: dataConfidence,
-            availableSources: 4,
+            availableSources,
             totalSources: 4,
-            hasApiErrors: warnings.length > 0,
-            missingSources: []
+            hasApiErrors: sourceHealth.some((row) => row.status !== "ok"),
+            missingSources
           },
           actions: [
             {
@@ -951,31 +1060,6 @@ export function registerRoutes(app: Express) {
         }
       };
 
-      const sourceHealth = [
-        {
-          source: "Hotels",
-          status: statusFromWarning(warnings.some((entry) => entry.includes("Makcorps") || entry.includes("Amadeus")), false),
-          errorSummary: warnings.find((entry) => entry.includes("Makcorps") || entry.includes("Amadeus")),
-          lastUpdated: new Date().toISOString()
-        },
-        {
-          source: "Events",
-          status: statusFromWarning(warnings.some((entry) => entry.includes("PredictHQ")), false),
-          errorSummary: warnings.find((entry) => entry.includes("PredictHQ")),
-          lastUpdated: new Date().toISOString()
-        },
-        {
-          source: "Holidays",
-          status: "ok",
-          lastUpdated: new Date().toISOString()
-        },
-        {
-          source: "Weather",
-          status: "ok",
-          lastUpdated: new Date().toISOString()
-        }
-      ];
-
       saveAnalysisRun(
         `${cityName}-${params.countryCode}`,
         model.recommendationConfidence.level,
@@ -984,6 +1068,7 @@ export function registerRoutes(app: Express) {
         {
           cityName,
           warnings,
+          fallbacksUsed: Array.from(fallbacksUsed),
           usage
         }
       );
@@ -991,10 +1076,19 @@ export function registerRoutes(app: Express) {
       return {
         generatedAt: new Date().toISOString(),
         warnings,
+        analysisContext: {
+          cityName,
+          countryCode: params.countryCode,
+          hotelType,
+          daysForward,
+          runMode: "fallback_first"
+        },
+        fallbacksUsed: Array.from(fallbacksUsed),
         usage,
         model,
         sourceHealth,
         pricingReasonsByDate,
+        explainabilityByDate,
         eventDates: Array.from(new Set(events.map((event) => normalizeEventDate(event.date)))),
         holidayDates: Array.from(holidayDates),
         longWeekendDates: Array.from(longWeekendDates),

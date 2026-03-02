@@ -25,6 +25,43 @@ export interface DashboardApiErrorState {
   details: DashboardApiErrorDetail[];
 }
 
+export interface ExplainabilityFactor {
+  value: number;
+  contribution: number;
+  reason: string;
+}
+
+export interface DateExplainability {
+  headline: string;
+  factors: {
+    occupancyRate: ExplainabilityFactor;
+    dayOfWeek: ExplainabilityFactor;
+    seasonality: ExplainabilityFactor;
+    events: ExplainabilityFactor;
+    weather: ExplainabilityFactor;
+    holiday: ExplainabilityFactor;
+    leadTime: ExplainabilityFactor;
+  };
+  guardrails: {
+    minHit: boolean;
+    maxHit: boolean;
+    dailyChangeCapped: boolean;
+  };
+}
+
+export interface AnalysisContext {
+  cityName: string;
+  countryCode: string;
+  hotelType: "city" | "business" | "leisure" | "beach" | "ski";
+  daysForward: number;
+  runMode: "fallback_first";
+}
+
+export interface SelectedDateExplainability {
+  date: string;
+  detail: DateExplainability | null;
+}
+
 export interface DemandInsight {
   index: number;
   level: "low" | "moderate" | "high" | "peak";
@@ -120,10 +157,13 @@ export interface DashboardModel {
 export interface MarketAnalysisResponse {
   generatedAt: string;
   warnings: string[];
+  analysisContext: AnalysisContext;
+  fallbacksUsed: string[];
   usage: UsageSummaryResponse;
   model: DashboardModel;
   sourceHealth: SourceHealthRow[];
   pricingReasonsByDate: Record<string, string[]>;
+  explainabilityByDate: Record<string, DateExplainability>;
   eventDates: string[];
   holidayDates: string[];
   longWeekendDates: string[];

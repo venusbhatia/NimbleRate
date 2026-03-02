@@ -33,11 +33,11 @@ const defaultCheckInDate = format(addDays(now, 7), "yyyy-MM-dd");
 const defaultCheckOutDate = format(addDays(now, 9), "yyyy-MM-dd");
 
 export const useSearchStore = create<SearchState>((set) => ({
-  cityName: "New York",
-  cityCode: "NYC",
+  cityName: "Austin",
+  cityCode: "AUS",
   countryCode: "US",
-  latitude: 40.7128,
-  longitude: -74.006,
+  latitude: 30.2672,
+  longitude: -97.7431,
   searchToken: 0,
   checkInDate: defaultCheckInDate,
   checkOutDate: defaultCheckOutDate,

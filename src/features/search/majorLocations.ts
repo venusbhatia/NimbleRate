@@ -22,6 +22,7 @@ function majorLocation(
 }
 
 export const majorLocations: LocationOption[] = [
+  majorLocation("austin-us", "Austin", "US", 30.2672, -97.7431, "AUS", "Texas"),
   majorLocation("new-york-us", "New York", "US", 40.7128, -74.006, "NYC", "New York"),
   majorLocation("los-angeles-us", "Los Angeles", "US", 34.0522, -118.2437, null, "California"),
   majorLocation("chicago-us", "Chicago", "US", 41.8781, -87.6298, "CHI", "Illinois"),

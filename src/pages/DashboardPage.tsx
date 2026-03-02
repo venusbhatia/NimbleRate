@@ -1,8 +1,11 @@
+import { useState } from "react";
+import { format, parseISO } from "date-fns";
+import { CompsetPositionChart } from "../components/charts/CompsetPositionChart";
 import { OccupancyBarChart } from "../components/charts/OccupancyBarChart";
 import { PriceHeatmap } from "../components/charts/PriceHeatmap";
+import { PriceLineChart } from "../components/charts/PriceLineChart";
 import { Badge } from "../components/ui/Badge";
 import { Card } from "../components/ui/Card";
-import { PriceLineChart } from "../components/charts/PriceLineChart";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useDashboardData } from "../features/dashboard/useDashboardData";
 import { EventsList } from "../features/events/EventsList";
@@ -13,6 +16,29 @@ import { SearchPanel } from "../features/search/SearchPanel";
 import { WeatherWidget } from "../features/weather/WeatherWidget";
 import { useDashboardStore } from "../store/useDashboardStore";
 import { confidenceTone, formatCompsetDelta, percentileBandLabel } from "../utils/priceEngineV2";
+import type { DateExplainability } from "../types/dashboard";
+import { computeQuotaState, fallbackLabel, quotaTone } from "../utils/dashboardStatus";
+
+function factorLabel(key: keyof DateExplainability["factors"]) {
+  switch (key) {
+    case "occupancyRate":
+      return "Occupancy / Pace";
+    case "dayOfWeek":
+      return "Day of Week";
+    case "seasonality":
+      return "Seasonality";
+    case "events":
+      return "Events";
+    case "weather":
+      return "Weather";
+    case "holiday":
+      return "Holidays";
+    case "leadTime":
+      return "Lead Time";
+    default:
+      return key;
+  }
+}
 
 export function DashboardPage() {
   const {
@@ -22,9 +48,12 @@ export function DashboardPage() {
     longWeekendDates,
     highDemandDates,
     pricingReasonsByDate,
+    explainabilityByDate,
     sourceHealth,
     usageSummary,
     warnings,
+    analysisContext,
+    fallbacksUsed,
     hasRunAnalysis,
     isLoading,
     isFetching,
@@ -32,6 +61,7 @@ export function DashboardPage() {
   } = useDashboardData();
   const activeNav = useDashboardStore((state) => state.activeNav);
   const pricePeriod = useDashboardStore((state) => state.pricePeriod);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -50,6 +80,29 @@ export function DashboardPage() {
   const anchorRecommendation = model.pricing[0];
   const scopedPricing = model.pricing.slice(0, pricePeriod);
   const providerUsageRows = usageSummary?.providers ?? model.providerUsage;
+  const compsetRates = model.compset.hotels
+    .flatMap((hotel) => hotel.otaRates.map((rate) => rate.rate))
+    .filter((rate) => Number.isFinite(rate) && rate > 0);
+  const chartRates = compsetRates.length ? compsetRates : [model.marketAnchor.compsetMedian];
+
+  const activeSelectedDate =
+    selectedDate && model.pricing.some((entry) => entry.date === selectedDate)
+      ? selectedDate
+      : model.pricing[0]?.date ?? null;
+
+  const selectedExplainability = activeSelectedDate
+    ? explainabilityByDate.get(activeSelectedDate) ?? null
+    : null;
+
+  const sortedFactorEntries = selectedExplainability
+    ? (Object.entries(selectedExplainability.factors) as Array<
+        [keyof DateExplainability["factors"], DateExplainability["factors"][keyof DateExplainability["factors"]]]
+      >).sort((a, b) => Math.abs(b[1].contribution) - Math.abs(a[1].contribution))
+    : [];
+
+  const isMakcorpsDegraded = fallbacksUsed.some(
+    (fallback) => fallback === "makcorps_fallback_amadeus" || fallback === "compset_fallback_static"
+  );
 
   return (
     <div className="space-y-6">
@@ -71,7 +124,10 @@ export function DashboardPage() {
             <summary className="cursor-pointer font-semibold">View exact API error details</summary>
             <div className="mt-3 space-y-3">
               {apiError.details.map((detail, index) => (
-                <div key={`${detail.source}-${index}`} className="rounded-md border border-red-200/70 bg-red-50/60 p-2 dark:border-red-800/40 dark:bg-red-900/20">
+                <div
+                  key={`${detail.source}-${index}`}
+                  className="rounded-md border border-red-200/70 bg-red-50/60 p-2 dark:border-red-800/40 dark:bg-red-900/20"
+                >
                   <p className="font-semibold">
                     {detail.source.toUpperCase()}
                     {detail.status ? ` (${detail.status})` : ""}
@@ -104,10 +160,18 @@ export function DashboardPage() {
               <li key={`${warning}-${index}`}>{warning}</li>
             ))}
           </ul>
+          {fallbacksUsed.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {fallbacksUsed.map((fallback) => (
+                <Badge key={fallback} tone="gold">
+                  {fallbackLabel(fallback)}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      {/* Refreshing banner */}
       {isFetching ? (
         <div className="flex items-center gap-2 rounded-xl border border-gold-200 bg-gold-50 px-4 py-2.5 text-sm font-medium text-gold-900 dark:border-gold-700/40 dark:bg-gold-900/20 dark:text-gold-300">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-gold-500" />
@@ -115,7 +179,6 @@ export function DashboardPage() {
         </div>
       ) : null}
 
-      {/* ===== OVERVIEW SECTION ===== */}
       {activeNav === "dashboard" ? (
         <>
           <SearchPanel />
@@ -145,14 +208,23 @@ export function DashboardPage() {
             <Card className="bg-white/95 dark:bg-neutral-900/95">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Recommendation Confidence</p>
               <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">{model.recommendationConfidence.score}/100</p>
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Badge tone={confidenceTone(model.recommendationConfidence.level)} className="capitalize">
                   {model.recommendationConfidence.level}
                 </Badge>
+                <Badge tone="neutral">{analysisContext.cityName}</Badge>
               </div>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{model.recommendationConfidence.reason}</p>
             </Card>
           </div>
+
+          <CompsetPositionChart
+            rates={chartRates}
+            recommendedRate={model.compsetPosition.recommendedRate}
+            p25={model.marketAnchor.compsetP25}
+            median={model.marketAnchor.compsetMedian}
+            p75={model.marketAnchor.compsetP75}
+          />
 
           <div className="grid gap-6 xl:grid-cols-3">
             <div className="xl:col-span-2">
@@ -163,9 +235,60 @@ export function DashboardPage() {
                 longWeekendDates={longWeekendDates}
                 highDemandDates={highDemandDates}
                 pricingReasonsByDate={pricingReasonsByDate}
+                selectedDate={activeSelectedDate}
+                onSelectDate={setSelectedDate}
               />
             </div>
-            {anchorRecommendation ? <MultiplierBreakdown recommendation={anchorRecommendation} /> : null}
+            <div className="space-y-6">
+              {anchorRecommendation ? <MultiplierBreakdown recommendation={anchorRecommendation} /> : null}
+              <Card className="bg-white/95 dark:bg-neutral-900/95">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold tracking-tight">Date Explainability</h3>
+                  {activeSelectedDate ? (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {format(parseISO(activeSelectedDate), "MMM d, yyyy")}
+                    </span>
+                  ) : null}
+                </div>
+                {selectedExplainability ? (
+                  <>
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{selectedExplainability.headline}</p>
+                    <div className="mt-4 space-y-2">
+                      {sortedFactorEntries.slice(0, 6).map(([factor, detail]) => (
+                        <div
+                          key={factor}
+                          className="rounded-lg border border-gray-200/70 bg-gray-50/80 px-3 py-2 text-xs dark:border-gray-700 dark:bg-neutral-800/60"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold">{factorLabel(factor)}</span>
+                            <span className={detail.contribution >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
+                              {detail.contribution >= 0 ? "+" : ""}
+                              {detail.contribution.toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="mt-1 text-gray-600 dark:text-gray-300">{detail.reason}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge tone={selectedExplainability.guardrails.minHit ? "negative" : "neutral"}>
+                        Min Guardrail {selectedExplainability.guardrails.minHit ? "hit" : "clear"}
+                      </Badge>
+                      <Badge tone={selectedExplainability.guardrails.maxHit ? "negative" : "neutral"}>
+                        Max Guardrail {selectedExplainability.guardrails.maxHit ? "hit" : "clear"}
+                      </Badge>
+                      <Badge tone={selectedExplainability.guardrails.dailyChangeCapped ? "gold" : "neutral"}>
+                        Daily Change {selectedExplainability.guardrails.dailyChangeCapped ? "capped" : "within limit"}
+                      </Badge>
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Select a day from the rate calendar to inspect explainability.
+                  </p>
+                )}
+              </Card>
+            </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-3">
@@ -184,7 +307,6 @@ export function DashboardPage() {
         </>
       ) : null}
 
-      {/* ===== RATE TRENDS SECTION ===== */}
       {activeNav === "calendar" ? (
         <>
           <PriceHeatmap
@@ -194,6 +316,8 @@ export function DashboardPage() {
             longWeekendDates={longWeekendDates}
             highDemandDates={highDemandDates}
             pricingReasonsByDate={pricingReasonsByDate}
+            selectedDate={activeSelectedDate}
+            onSelectDate={setSelectedDate}
           />
           <div className="grid gap-6 xl:grid-cols-2">
             <PriceLineChart data={scopedPricing} />
@@ -202,12 +326,8 @@ export function DashboardPage() {
         </>
       ) : null}
 
-      {/* ===== EVENTS SECTION ===== */}
-      {activeNav === "events" ? (
-        <EventsList events={model.events} limit={Math.max(6, pricePeriod)} />
-      ) : null}
+      {activeNav === "events" ? <EventsList events={model.events} limit={Math.max(6, pricePeriod)} /> : null}
 
-      {/* ===== SETTINGS SECTION ===== */}
       {activeNav === "settings" ? (
         <div className="space-y-6">
           <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
@@ -251,6 +371,15 @@ export function DashboardPage() {
             </div>
           </div>
 
+          {isMakcorpsDegraded ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-700/40 dark:bg-amber-900/20">
+              <h3 className="text-lg font-bold tracking-tight text-amber-900 dark:text-amber-200">Makcorps Diagnostics Recommended</h3>
+              <p className="mt-2 text-sm text-amber-800 dark:text-amber-300">
+                Compset is running on fallback. Check diagnostics at <code>/api/providers/makcorps/diagnostics</code> for the latest recommended mode and endpoint access details.
+              </p>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">
             <h3 className="text-lg font-bold tracking-tight">Provider Usage & Budgets</h3>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -269,30 +398,24 @@ export function DashboardPage() {
                 </thead>
                 <tbody>
                   {providerUsageRows.length ? (
-                    providerUsageRows.map((row) => (
-                      <tr key={row.provider} className="border-t border-gray-100 dark:border-gray-800">
-                        <td className="px-3 py-2 font-medium uppercase">{row.provider}</td>
-                        <td className="px-3 py-2 tabular-nums">
-                          {row.calls}/{row.quota} ({row.percentUsed.toFixed(1)}%)
-                        </td>
-                        <td className="px-3 py-2 tabular-nums">{row.remaining}</td>
-                        <td className="px-3 py-2">
-                          <Badge
-                            tone={
-                              row.status === "ok"
-                                ? "positive"
-                                : row.status === "warning"
-                                  ? "gold"
-                                  : "negative"
-                            }
-                            className="uppercase"
-                          >
-                            {row.status}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.recommendation}</td>
-                      </tr>
-                    ))
+                    providerUsageRows.map((row) => {
+                      const status = computeQuotaState(row);
+                      return (
+                        <tr key={row.provider} className="border-t border-gray-100 dark:border-gray-800">
+                          <td className="px-3 py-2 font-medium uppercase">{row.provider}</td>
+                          <td className="px-3 py-2 tabular-nums">
+                            {row.calls}/{row.quota} ({row.percentUsed.toFixed(1)}%)
+                          </td>
+                          <td className="px-3 py-2 tabular-nums">{row.remaining}</td>
+                          <td className="px-3 py-2">
+                            <Badge tone={quotaTone(status)} className="uppercase">
+                              {status}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.recommendation}</td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr className="border-t border-gray-100 dark:border-gray-800">
                       <td className="px-3 py-3 text-gray-500 dark:text-gray-400" colSpan={5}>

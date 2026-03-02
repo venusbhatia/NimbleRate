@@ -180,5 +180,87 @@ describe("api routes", () => {
     expect(response.body.model.marketAnchor).toBeDefined();
     expect(Array.isArray(response.body.model.pricing)).toBe(true);
     expect(Array.isArray(response.body.warnings)).toBe(true);
+    expect(response.body.analysisContext?.cityName).toBe("Austin");
+    expect(response.body.analysisContext?.runMode).toBe("fallback_first");
+    expect(Array.isArray(response.body.fallbacksUsed)).toBe(true);
+    expect(response.body.fallbacksUsed).toContain("compset_fallback_static");
+    expect(response.body.explainabilityByDate).toBeDefined();
+    const firstDate = response.body.model.pricing[0]?.date;
+    expect(firstDate).toBeTruthy();
+    expect(response.body.explainabilityByDate[firstDate]).toBeDefined();
+    expect(response.body.explainabilityByDate[firstDate].guardrails).toBeDefined();
+    expect(Array.isArray(response.body.sourceHealth)).toBe(true);
+    expect(response.body.sourceHealth.some((row: { source: string; status: string }) => row.source === "Hotels")).toBe(true);
+  });
+
+  it("sets explicit events fallback flag when Ticketmaster fallback succeeds", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.includes("/PublicHolidays/") || url.includes("/LongWeekend/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("openweathermap.org/data/2.5/forecast")) {
+        return new Response(
+          JSON.stringify({
+            list: [
+              {
+                dt_txt: "2026-03-10 12:00:00",
+                main: { temp: 20, humidity: 50 },
+                pop: 0.1,
+                weather: [{ id: 801, icon: "02d" }]
+              }
+            ]
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      if (url.includes("ticketmaster.com/discovery/v2/events.json")) {
+        return new Response(
+          JSON.stringify({
+            _embedded: {
+              events: [
+                {
+                  id: "tm-1",
+                  name: "Fallback Event",
+                  dates: {
+                    start: { localDate: "2026-03-10" },
+                    status: { code: "onsale" }
+                  },
+                  _embedded: {
+                    venues: [{ name: "Venue", location: { latitude: "30.26", longitude: "-97.74" } }]
+                  },
+                  classifications: [{ segment: { name: "Music" }, genre: { name: "Rock" } }]
+                }
+              ]
+            }
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      return new Response(JSON.stringify({ message: "upstream unavailable in test" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+
+    const response = await request(app).get(
+      "/api/market/analysis?cityName=Austin&countryCode=US&latitude=30.2672&longitude=-97.7431&checkInDate=2026-03-10&checkOutDate=2026-03-12&hotelType=city&estimatedOccupancy=68&adults=2"
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.fallbacksUsed).toContain("predicthq_fallback_ticketmaster");
   });
 });

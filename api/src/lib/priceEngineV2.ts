@@ -23,6 +23,32 @@ export interface EngineFactorBreakdown {
   leadTime: number;
 }
 
+export interface EngineExplainabilityFactor {
+  value: number;
+  contribution: number;
+  reason: string;
+}
+
+export interface EngineGuardrails {
+  minHit: boolean;
+  maxHit: boolean;
+  dailyChangeCapped: boolean;
+}
+
+export interface EngineExplainability {
+  headline: string;
+  factors: {
+    occupancyRate: EngineExplainabilityFactor;
+    dayOfWeek: EngineExplainabilityFactor;
+    seasonality: EngineExplainabilityFactor;
+    events: EngineExplainabilityFactor;
+    weather: EngineExplainabilityFactor;
+    holiday: EngineExplainabilityFactor;
+    leadTime: EngineExplainabilityFactor;
+  };
+  guardrails: EngineGuardrails;
+}
+
 export interface EngineRecommendation {
   date: string;
   baseRate: number;
@@ -31,6 +57,7 @@ export interface EngineRecommendation {
   rawMultiplier: number;
   factors: EngineFactorBreakdown;
   reasons: string[];
+  explainability: EngineExplainability;
 }
 
 export interface EngineInput {
@@ -170,6 +197,133 @@ function dampen(rawMultiplier: number) {
   return rawMultiplier;
 }
 
+function describeOccupancyFactor(multiplier: number, pace: PacePoint) {
+  if (multiplier >= 1.25) {
+    return `Strong booking pace (${pace.occupancyRate}% occ, ${pace.occupancyRate - pace.occupancyLastYear}% vs last year) increased price pressure.`;
+  }
+  if (multiplier >= 1.05) {
+    return `Healthy booking pace (${pace.occupancyRate}% occupancy) supports a moderate uplift.`;
+  }
+  if (multiplier <= 0.9) {
+    return `Soft booking pace (${pace.occupancyRate}% occupancy) triggered defensive pricing.`;
+  }
+  return "Booking pace is close to baseline.";
+}
+
+function describeDayOfWeekFactor(multiplier: number, date: string, hotelType: V2HotelType) {
+  const day = getDay(parseISO(date));
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  if (multiplier > 1) {
+    return `${dayNames[day]} demand pattern for ${hotelType} properties supports a rate uplift.`;
+  }
+  if (multiplier < 1) {
+    return `${dayNames[day]} demand pattern for ${hotelType} properties softens pricing.`;
+  }
+  return `${dayNames[day]} demand pattern is neutral for ${hotelType} properties.`;
+}
+
+function describeEventFactor(multiplier: number, eventImpactScore: number) {
+  if (multiplier >= 1.5) {
+    return `High-impact events detected (impact score ${Math.round(eventImpactScore)}).`;
+  }
+  if (multiplier >= 1.2) {
+    return `Moderate event demand uplift (impact score ${Math.round(eventImpactScore)}).`;
+  }
+  if (eventImpactScore > 0) {
+    return `Minor event activity present (impact score ${Math.round(eventImpactScore)}).`;
+  }
+  return "No significant event-driven uplift for this date.";
+}
+
+function describeHolidayFactor(isHoliday: boolean, isLongWeekend: boolean) {
+  if (isHoliday && isLongWeekend) {
+    return "Public holiday overlaps with long weekend, boosting expected demand.";
+  }
+  if (isHoliday) {
+    return "Public holiday demand uplift applied.";
+  }
+  if (isLongWeekend) {
+    return "Long-weekend uplift applied.";
+  }
+  return "No holiday uplift applied.";
+}
+
+function describeWeatherFactor(multiplier: number, category: V2WeatherCategory, hotelType: V2HotelType) {
+  if (multiplier > 1.05) {
+    return `${category.replace("_", " ")} weather is favorable for ${hotelType} demand.`;
+  }
+  if (multiplier < 0.95) {
+    return `${category.replace("_", " ")} weather introduces demand risk for ${hotelType} demand.`;
+  }
+  return `${category.replace("_", " ")} weather impact is limited for ${hotelType} demand.`;
+}
+
+function describeLeadTimeFactor(multiplier: number, date: string) {
+  const daysOut = differenceInCalendarDays(parseISO(date), new Date());
+  if (multiplier > 1.01) {
+    return `Lead time (${daysOut} days out) supports a mild premium.`;
+  }
+  if (multiplier < 0.99) {
+    return `Lead time (${daysOut} days out) favors conversion pricing.`;
+  }
+  return `Lead time (${daysOut} days out) is neutral.`;
+}
+
+function computeContributionMap(factors: EngineFactorBreakdown) {
+  const entries = Object.entries(factors) as Array<[keyof EngineFactorBreakdown, number]>;
+  const logs = entries.map(([key, value]) => [key, Math.log(Math.max(value, 0.0001))] as const);
+  const total = logs.reduce((sum, [, value]) => sum + value, 0);
+
+  const contributionMap = new Map<keyof EngineFactorBreakdown, number>();
+
+  if (Math.abs(total) < 1e-9) {
+    entries.forEach(([key]) => contributionMap.set(key, 0));
+    return contributionMap;
+  }
+
+  logs.forEach(([key, value]) => {
+    contributionMap.set(key, Number(((value / total) * 100).toFixed(1)));
+  });
+
+  return contributionMap;
+}
+
+function topContributionLabel(contributions: Map<keyof EngineFactorBreakdown, number>) {
+  const label: Record<keyof EngineFactorBreakdown, string> = {
+    occupancyRate: "booking pace",
+    dayOfWeek: "day-of-week pattern",
+    seasonality: "seasonality",
+    events: "events",
+    weather: "weather",
+    holiday: "holiday effects",
+    leadTime: "lead time"
+  };
+
+  let winner: keyof EngineFactorBreakdown = "occupancyRate";
+  let winnerAbs = -1;
+
+  contributions.forEach((value, key) => {
+    const abs = Math.abs(value);
+    if (abs > winnerAbs) {
+      winner = key;
+      winnerAbs = abs;
+    }
+  });
+
+  return label[winner];
+}
+
+function buildHeadline(finalMultiplier: number, contributions: Map<keyof EngineFactorBreakdown, number>) {
+  const dominantSignal = topContributionLabel(contributions);
+  if (finalMultiplier >= 1.03) {
+    return `Rate uplift is primarily driven by ${dominantSignal}.`;
+  }
+  if (finalMultiplier <= 0.97) {
+    return `Rate softening is primarily driven by ${dominantSignal}.`;
+  }
+  return `Rate is holding close to market anchor with ${dominantSignal} as the main driver.`;
+}
+
 function buildReasons(signal: EngineSignalInput, factors: EngineFactorBreakdown) {
   const reasons: string[] = [];
   if (factors.events > 1.1) reasons.push("Event demand and attendance are elevated.");
@@ -218,12 +372,59 @@ export function calculateV2Recommendations(input: EngineInput): EngineOutput {
       factors.leadTime;
 
     const dampened = dampen(rawMultiplier);
-    let finalRate = anchorRate * dampened;
-
-    finalRate = clamp(finalRate, input.minPrice, input.maxPrice);
+    const uncappedRate = anchorRate * dampened;
+    const afterBoundsRate = clamp(uncappedRate, input.minPrice, input.maxPrice);
     const maxDailyDelta = previousRate * 0.2;
-    finalRate = clamp(finalRate, previousRate - maxDailyDelta, previousRate + maxDailyDelta);
+    const finalRate = clamp(afterBoundsRate, previousRate - maxDailyDelta, previousRate + maxDailyDelta);
+    const guardrails: EngineGuardrails = {
+      minHit: uncappedRate < input.minPrice,
+      maxHit: uncappedRate > input.maxPrice,
+      dailyChangeCapped: Math.abs(afterBoundsRate - finalRate) > 0.0001
+    };
     previousRate = finalRate;
+
+    const contributions = computeContributionMap(factors);
+    const explainability: EngineExplainability = {
+      headline: buildHeadline(finalRate / anchorRate, contributions),
+      factors: {
+        occupancyRate: {
+          value: factors.occupancyRate,
+          contribution: contributions.get("occupancyRate") ?? 0,
+          reason: describeOccupancyFactor(factors.occupancyRate, signal.pace)
+        },
+        dayOfWeek: {
+          value: factors.dayOfWeek,
+          contribution: contributions.get("dayOfWeek") ?? 0,
+          reason: describeDayOfWeekFactor(factors.dayOfWeek, signal.date, input.hotelType)
+        },
+        seasonality: {
+          value: factors.seasonality,
+          contribution: contributions.get("seasonality") ?? 0,
+          reason: "Seasonality baseline is neutral in phase-1."
+        },
+        events: {
+          value: factors.events,
+          contribution: contributions.get("events") ?? 0,
+          reason: describeEventFactor(factors.events, signal.eventImpactScore)
+        },
+        weather: {
+          value: factors.weather,
+          contribution: contributions.get("weather") ?? 0,
+          reason: describeWeatherFactor(factors.weather, signal.weatherCategory, input.hotelType)
+        },
+        holiday: {
+          value: factors.holiday,
+          contribution: contributions.get("holiday") ?? 0,
+          reason: describeHolidayFactor(signal.isHoliday, signal.isLongWeekend)
+        },
+        leadTime: {
+          value: factors.leadTime,
+          contribution: contributions.get("leadTime") ?? 0,
+          reason: describeLeadTimeFactor(factors.leadTime, signal.date)
+        }
+      },
+      guardrails
+    };
 
     return {
       date: signal.date,
@@ -232,7 +433,8 @@ export function calculateV2Recommendations(input: EngineInput): EngineOutput {
       finalMultiplier: finalRate / anchorRate,
       finalRate: Math.round(finalRate),
       factors,
-      reasons: buildReasons(signal, factors)
+      reasons: buildReasons(signal, factors),
+      explainability
     };
   });
 

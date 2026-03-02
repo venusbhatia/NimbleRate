@@ -8,6 +8,8 @@ interface PriceHeatmapProps {
   longWeekendDates: Set<string>;
   highDemandDates: Set<string>;
   pricingReasonsByDate: Map<string, string[]>;
+  selectedDate: string | null;
+  onSelectDate: (date: string) => void;
 }
 
 export function PriceHeatmap({
@@ -16,7 +18,9 @@ export function PriceHeatmap({
   holidayDates,
   longWeekendDates,
   highDemandDates,
-  pricingReasonsByDate
+  pricingReasonsByDate,
+  selectedDate,
+  onSelectDate
 }: PriceHeatmapProps) {
   return (
     <PriceCalendar
@@ -26,6 +30,8 @@ export function PriceHeatmap({
       longWeekendDates={longWeekendDates}
       highDemandDates={highDemandDates}
       pricingReasonsByDate={pricingReasonsByDate}
+      selectedDate={selectedDate}
+      onSelectDate={onSelectDate}
     />
   );
 }

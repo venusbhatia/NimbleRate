@@ -38,9 +38,9 @@ Set secrets in `api/.env.local`:
 - `OPENWEATHER_API_KEY`
 - Optional v2 providers:
   - `MAKCORPS_API_KEY` (preferred)
-  - `MAKCORPS_USE_RAPIDAPI` + `MAKCORPS_RAPIDAPI_HOST` (if using RapidAPI gateway)
+  - `MAKCORPS_USE_RAPIDAPI` + `MAKCORPS_RAPIDAPI_HOST` (only if your Makcorps key requires RapidAPI transport)
   - `MAKCORPS_RAPIDAPI_BASE_URL` (optional override)
-  - `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (legacy auth flow)
+  - `MAKCORPS_USERNAME` + `MAKCORPS_PASSWORD` (optional legacy auth fallback)
   - `PREDICTHQ_API_TOKEN`
   - `SERPAPI_API_KEY` (reserved for trends integration)
 
@@ -125,8 +125,11 @@ src/
 - Dashboard calls `/api/market/analysis` as the primary integration route.
 - External provider calls are made only when the user clicks `Run Analysis`.
 - `/api/usage/summary` powers provider call counters and quota warnings in Settings.
+- Demo defaults are Austin-first (`AUS`, US) while global city search remains enabled.
+- `/api/market/analysis` now returns `analysisContext`, `fallbacksUsed`, and `explainabilityByDate` for per-date explainability UI.
 
 ## Notes
 
 - Frontend now uses backend proxy routes under `/api`.
 - Keep secrets only in `api/.env.local`.
+- Phase-2 signals (SerpAPI trends + Amadeus flight-demand intent) are intentionally deferred until after Phase-1 stabilization.

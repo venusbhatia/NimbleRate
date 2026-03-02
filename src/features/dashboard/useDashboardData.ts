@@ -6,6 +6,8 @@ import { ApiError } from "../../services/apiClient";
 import { getProviderUsageSummary } from "../../services/usageApi";
 import { useSearchParams } from "../search/useSearchParams";
 import type {
+  AnalysisContext,
+  DateExplainability,
   DashboardApiErrorDetail,
   DashboardApiErrorSource,
   DashboardApiErrorState,
@@ -343,6 +345,53 @@ export function useDashboardData() {
     return map;
   }, [analysisQuery.data?.pricingReasonsByDate, model.pricing]);
 
+  const explainabilityByDate = useMemo(() => {
+    const map = new Map<string, DateExplainability>();
+
+    if (analysisQuery.data?.explainabilityByDate) {
+      Object.entries(analysisQuery.data.explainabilityByDate).forEach(([date, detail]) => {
+        map.set(date, detail);
+      });
+      return map;
+    }
+
+    model.pricing.forEach((day) => {
+      map.set(day.date, {
+        headline: "Run analysis to load full date-level explainability.",
+        factors: {
+          occupancyRate: { value: 1, contribution: 0, reason: "Run analysis for live pace impact." },
+          dayOfWeek: { value: 1, contribution: 0, reason: "Run analysis for day-of-week signal." },
+          seasonality: { value: 1, contribution: 0, reason: "Run analysis for seasonality signal." },
+          events: { value: 1, contribution: 0, reason: "Run analysis for event impact." },
+          weather: { value: 1, contribution: 0, reason: "Run analysis for weather impact." },
+          holiday: { value: 1, contribution: 0, reason: "Run analysis for holiday impact." },
+          leadTime: { value: 1, contribution: 0, reason: "Run analysis for lead-time impact." }
+        },
+        guardrails: {
+          minHit: false,
+          maxHit: false,
+          dailyChangeCapped: false
+        }
+      });
+    });
+
+    return map;
+  }, [analysisQuery.data?.explainabilityByDate, model.pricing]);
+
+  const analysisContext = useMemo<AnalysisContext>(() => {
+    if (analysisQuery.data?.analysisContext) {
+      return analysisQuery.data.analysisContext;
+    }
+
+    return {
+      cityName: params.cityName,
+      countryCode: params.countryCode,
+      hotelType: params.hotelType,
+      daysForward: 30,
+      runMode: "fallback_first"
+    };
+  }, [analysisQuery.data?.analysisContext, params.cityName, params.countryCode, params.hotelType]);
+
   const sourceHealth = useMemo<SourceHealthRow[]>(() => {
     if (analysisQuery.data?.sourceHealth?.length) {
       return analysisQuery.data.sourceHealth;
@@ -378,6 +427,8 @@ export function useDashboardData() {
     model,
     apiError,
     warnings: analysisQuery.data?.warnings ?? [],
+    analysisContext,
+    fallbacksUsed: analysisQuery.data?.fallbacksUsed ?? [],
     usageSummary: usageSummaryQuery.data,
     hasRunAnalysis: params.searchToken > 0,
     eventDates,
@@ -385,6 +436,7 @@ export function useDashboardData() {
     longWeekendDates: longWeekendDateSet,
     highDemandDates,
     pricingReasonsByDate,
+    explainabilityByDate,
     sourceHealth,
     isLoading: params.searchToken > 0 && analysisQuery.isLoading,
     isFetching: analysisQuery.isFetching || usageSummaryQuery.isFetching

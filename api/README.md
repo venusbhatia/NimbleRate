@@ -17,6 +17,12 @@ cd api
 pnpm init
 ```
 
+Create local secrets file:
+
+```bash
+cp .env.example .env.local
+```
+
 Then expose routes like:
 
 - `GET /api/hotels/offers`

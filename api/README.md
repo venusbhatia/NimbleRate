@@ -50,6 +50,8 @@ pnpm --dir api build
 - `GET /api/events/predicthq`
 - `POST /api/pace/simulate`
 - `GET /api/usage/summary`
+- `GET /api/market/history`
+- `GET /api/parity/summary`
 - `GET /api/market/analysis`
 
 ## Notes
@@ -57,6 +59,7 @@ pnpm --dir api build
 - Frontend should call only backend `/api/*` routes (no direct provider keys in frontend).
 - In local development, root `vite.config.ts` proxies `/api` to `http://localhost:8787`.
 - Set `FRONTEND_ORIGIN=http://localhost:5173` in `api/.env.local` for local CORS.
+- Optional DB override: set `NIMBLERATE_DB_PATH` to store SQLite outside default `api/data/nimblerate.db`.
 - v2 provider integrations are optional at boot: missing keys return structured `NOT_CONFIGURED` errors for direct provider endpoints, while `/api/market/analysis` degrades gracefully with fallbacks and warnings.
 - Makcorps auth is API-key-first:
   - Preferred: `MAKCORPS_API_KEY`
@@ -72,6 +75,8 @@ pnpm --dir api build
   - `fallbacksUsed` (machine-readable fallback flags)
   - `sourceHealth` (Hotels, Events, Holidays, Weather, Trends, Flights, PMS, University)
   - `explainabilityByDate` (per-day factor contribution + guardrail details)
+- `/api/market/history` and `/api/parity/summary` are SQLite-backed and do not call external providers.
+- `ANALYSIS_REQUIRED` (HTTP 409 + `details.code`) means requested market/date data does not exist yet; run analysis first.
 - New fallback flags in phase2_wave1:
   - `trends_fallback_neutral`
   - `flight_demand_fallback_neutral`

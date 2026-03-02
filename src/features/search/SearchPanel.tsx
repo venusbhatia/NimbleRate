@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, HelpCircle, Loader2, MapPin, Play, Users } from "lucide-react";
+import { Building2, CalendarDays, DollarSign, HelpCircle, Loader2, MapPin, Play, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "../../components/ui/Card";
 import { useDebounce } from "../../hooks/useDebounce";
@@ -196,12 +196,14 @@ export function SearchPanel() {
     checkInDate,
     checkOutDate,
     adults,
+    directRate,
     hotelType,
     estimatedOccupancy,
     searchToken,
     setCity,
     setDates,
     setAdults,
+    setDirectRate,
     setHotelType,
     setEstimatedOccupancy,
     runAnalysis
@@ -337,7 +339,7 @@ export function SearchPanel() {
 
   return (
     <Card className="animate-fadeIn bg-white/95 p-6 dark:bg-neutral-900/95">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 lg:items-end">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 lg:items-end">
         <label className="relative space-y-2 lg:col-span-2">
           <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Building2 className="h-3.5 w-3.5" />
@@ -465,6 +467,22 @@ export function SearchPanel() {
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="space-y-2">
+          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <DollarSign className="h-3.5 w-3.5" />
+            Direct Rate
+          </span>
+          <input
+            type="number"
+            min={30}
+            max={2000}
+            step={1}
+            value={directRate}
+            onChange={(event) => setDirectRate(Math.max(30, Number(event.target.value) || 30))}
+            className={inputClass}
+          />
         </label>
 
         <label className="space-y-2">

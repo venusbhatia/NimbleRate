@@ -11,7 +11,9 @@ export type DashboardApiErrorSource =
   | "holidays"
   | "weather"
   | "analysis"
-  | "usage";
+  | "usage"
+  | "history"
+  | "parity";
 
 export interface DashboardApiErrorDetail {
   source: DashboardApiErrorSource;

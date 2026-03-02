@@ -11,6 +11,7 @@ export function useSearchParams() {
     checkInDate,
     checkOutDate,
     adults,
+    directRate,
     hotelType,
     estimatedOccupancy
   } = useSearchStore();
@@ -25,6 +26,7 @@ export function useSearchParams() {
     checkInDate,
     checkOutDate,
     adults,
+    directRate,
     hotelType,
     estimatedOccupancy
   };

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLongWeekendEntries, normalizePublicHolidayEntries } from "./useDashboardData";
+import { ApiError } from "../../services/apiClient";
+import {
+  isAnalysisRequiredError,
+  normalizeLongWeekendEntries,
+  normalizePublicHolidayEntries
+} from "./useDashboardData";
 
 describe("useDashboardData normalization", () => {
   it("filters null and malformed public holiday records safely", () => {
@@ -26,5 +31,15 @@ describe("useDashboardData normalization", () => {
     expect(normalized).toHaveLength(1);
     expect(normalized[0]?.startDate).toBe("2026-12-24");
     expect(normalized[0]?.endDate).toBe("2026-12-27");
+  });
+
+  it("identifies ANALYSIS_REQUIRED api errors", () => {
+    const error = new ApiError("No history", 409, { details: { code: "ANALYSIS_REQUIRED" } });
+    expect(isAnalysisRequiredError(error)).toBe(true);
+  });
+
+  it("does not classify non-ANALYSIS_REQUIRED errors as hints", () => {
+    const error = new ApiError("Server error", 500, { message: "bad gateway" });
+    expect(isAnalysisRequiredError(error)).toBe(false);
   });
 });

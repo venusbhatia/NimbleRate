@@ -2,8 +2,39 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const dataDir = path.resolve(process.cwd(), "data");
-const databasePath = path.join(dataDir, "nimblerate.db");
+const DB_BUSY_TIMEOUT_MS = 5000;
+const LOCK_RETRY_ATTEMPTS = 4;
+
+export function resolveDatabasePath(rawPath = process.env.NIMBLERATE_DB_PATH, cwd = process.cwd()) {
+  if (!rawPath || rawPath.trim().length === 0) {
+    return path.resolve(cwd, "data", "nimblerate.db");
+  }
+
+  const normalized = rawPath.trim();
+  if (path.isAbsolute(normalized)) {
+    return normalized;
+  }
+
+  return path.resolve(cwd, normalized);
+}
+
+export function isDatabaseLockedError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("database is locked") || message.includes("database table is locked");
+}
+
+function sleep(ms: number) {
+  const waitBuffer = new SharedArrayBuffer(4);
+  const waitArray = new Int32Array(waitBuffer);
+  Atomics.wait(waitArray, 0, 0, ms);
+}
+
+const databasePath = resolveDatabasePath();
+const dataDir = path.dirname(databasePath);
 
 function ensureDataDir() {
   if (!fs.existsSync(dataDir)) {
@@ -13,7 +44,20 @@ function ensureDataDir() {
 
 function runSqlRaw(args: string[]) {
   ensureDataDir();
-  return execFileSync("sqlite3", args, { encoding: "utf8" });
+
+  for (let attempt = 0; attempt < LOCK_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return execFileSync("sqlite3", args, { encoding: "utf8" });
+    } catch (error) {
+      if (!isDatabaseLockedError(error) || attempt === LOCK_RETRY_ATTEMPTS - 1) {
+        throw error;
+      }
+
+      sleep(50 * (attempt + 1));
+    }
+  }
+
+  return "";
 }
 
 export function sqlQuote(value: string) {
@@ -21,11 +65,11 @@ export function sqlQuote(value: string) {
 }
 
 export function executeSql(sql: string) {
-  runSqlRaw([databasePath, sql]);
+  runSqlRaw(["-cmd", `.timeout ${DB_BUSY_TIMEOUT_MS}`, databasePath, sql]);
 }
 
 export function queryJson<T>(sql: string): T[] {
-  const raw = runSqlRaw(["-json", databasePath, sql]).trim();
+  const raw = runSqlRaw(["-cmd", `.timeout ${DB_BUSY_TIMEOUT_MS}`, "-json", databasePath, sql]).trim();
   if (!raw) {
     return [];
   }
@@ -73,5 +117,11 @@ export function initDatabase() {
       recommended_rate REAL NOT NULL,
       payload_json TEXT NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_analysis_runs_market_requested
+      ON analysis_runs(market_key, requested_at);
+
+    CREATE INDEX IF NOT EXISTS idx_compset_city_collected_dates
+      ON compset_snapshots(city, collected_at, check_in, check_out);
   `);
 }

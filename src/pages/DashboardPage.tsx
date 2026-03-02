@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import { CompsetPositionChart } from "../components/charts/CompsetPositionChart";
+import { HistoricalTrendChart } from "../components/charts/HistoricalTrendChart";
 import { OccupancyBarChart } from "../components/charts/OccupancyBarChart";
 import { PriceHeatmap } from "../components/charts/PriceHeatmap";
 import { PriceLineChart } from "../components/charts/PriceLineChart";
@@ -10,11 +11,13 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { useDashboardData } from "../features/dashboard/useDashboardData";
 import { EventsList } from "../features/events/EventsList";
 import { ActionRecommendations } from "../features/insights/ActionRecommendations";
+import { ParitySummaryCard } from "../features/insights/ParitySummaryCard";
 import { KPICards } from "../features/pricing/KPICards";
 import { MultiplierBreakdown } from "../features/pricing/MultiplierBreakdown";
 import { SearchPanel } from "../features/search/SearchPanel";
 import { WeatherWidget } from "../features/weather/WeatherWidget";
 import { useDashboardStore } from "../store/useDashboardStore";
+import { useSearchStore } from "../store/useSearchStore";
 import { confidenceTone, formatCompsetDelta, percentileBandLabel } from "../utils/priceEngineV2";
 import type { DateExplainability } from "../types/dashboard";
 import { computeQuotaState, fallbackLabel, quotaTone } from "../utils/dashboardStatus";
@@ -60,6 +63,8 @@ export function DashboardPage() {
     warnings,
     analysisContext,
     fallbacksUsed,
+    history,
+    parity,
     hasRunAnalysis,
     isLoading,
     isFetching,
@@ -67,6 +72,7 @@ export function DashboardPage() {
   } = useDashboardData();
   const activeNav = useDashboardStore((state) => state.activeNav);
   const pricePeriod = useDashboardStore((state) => state.pricePeriod);
+  const directRate = useSearchStore((state) => state.directRate);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   if (isLoading) {
@@ -336,7 +342,10 @@ export function DashboardPage() {
                 signals={model.insights.signals}
               />
             </div>
-            <EventsList events={model.events} limit={5} />
+            <div className="space-y-6">
+              <ParitySummaryCard parity={parity} directRate={directRate} />
+              <EventsList events={model.events} limit={5} />
+            </div>
           </div>
 
           <WeatherWidget weather={model.weather} />
@@ -356,8 +365,35 @@ export function DashboardPage() {
             onSelectDate={setSelectedDate}
           />
           <div className="grid gap-6 xl:grid-cols-2">
+            <HistoricalTrendChart history={history} />
             <PriceLineChart data={scopedPricing} />
+          </div>
+          {history ? (
+            <Card className="bg-white/95 dark:bg-neutral-900/95">
+              <h3 className="text-lg font-semibold tracking-tight">History Summary</h3>
+              <div className="mt-3 grid gap-2 text-sm text-gray-600 sm:grid-cols-2 dark:text-gray-300">
+                <p>
+                  Avg recommended rate:{" "}
+                  <span className="font-semibold tabular-nums">${history.summary.recommendedAvg.toFixed(0)}</span>
+                </p>
+                <p>
+                  Recommended trend:{" "}
+                  <span className="font-semibold tabular-nums">{history.summary.recommendedTrendPct.toFixed(1)}%</span>
+                </p>
+                <p>
+                  Avg compset median:{" "}
+                  <span className="font-semibold tabular-nums">${history.summary.compsetAvg.toFixed(0)}</span>
+                </p>
+                <p>
+                  Volatility:{" "}
+                  <span className="font-semibold tabular-nums">{history.summary.volatilityPct.toFixed(1)}%</span>
+                </p>
+              </div>
+            </Card>
+          ) : null}
+          <div className="grid gap-6 xl:grid-cols-2">
             <OccupancyBarChart data={scopedPricing} />
+            <ParitySummaryCard parity={parity} directRate={directRate} />
           </div>
         </>
       ) : null}
@@ -463,6 +499,8 @@ export function DashboardPage() {
               </table>
             </div>
           </div>
+
+          <ParitySummaryCard parity={parity} directRate={directRate} />
         </div>
       ) : null}
     </div>

@@ -12,12 +12,18 @@ process.env.MAKCORPS_PASSWORD = "";
 
 const { createApp } = await import("./app.js");
 const { clearResponseCache } = await import("./lib/http.js");
+const { executeSql, sqlQuote } = await import("./lib/db.js");
 
 const app = createApp();
 
 describe("api routes", () => {
   beforeEach(() => {
     clearResponseCache();
+    executeSql(`
+      DELETE FROM provider_usage;
+      DELETE FROM compset_snapshots;
+      DELETE FROM analysis_runs;
+    `);
   });
 
   afterEach(() => {
@@ -276,5 +282,79 @@ describe("api routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.fallbacksUsed).toContain("predicthq_fallback_ticketmaster");
+  });
+
+  it("returns ANALYSIS_REQUIRED for market history when no historical runs exist", async () => {
+    const response = await request(app).get("/api/market/history?cityName=Austin&countryCode=US&days=30");
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toContain("No historical analysis runs");
+    expect(response.body.details?.code).toBe("ANALYSIS_REQUIRED");
+  });
+
+  it("returns market history payload from persisted analysis runs", async () => {
+    const now = new Date();
+    const run1 = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const run2 = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const run3 = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const payload = JSON.stringify({ cityName: "Austin" });
+
+    executeSql(`
+      INSERT INTO analysis_runs(market_key, requested_at, confidence, anchor_rate, recommended_rate, payload_json)
+      VALUES
+        ('austin-us', ${sqlQuote(run1)}, 'medium', 200, 210, ${sqlQuote(payload)}),
+        ('austin-us', ${sqlQuote(run2)}, 'high', 205, 220, ${sqlQuote(payload)}),
+        ('austin-us', ${sqlQuote(run3)}, 'high', 208, 230, ${sqlQuote(payload)});
+
+      INSERT INTO compset_snapshots(city, check_in, check_out, hotel_name, hotel_id, rate, ota, collected_at)
+      VALUES
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel A', 'H1', 215, 'booking', ${sqlQuote(run2)}),
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel B', 'H2', 225, 'expedia', ${sqlQuote(run2)}),
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel C', 'H3', 235, 'agoda', ${sqlQuote(run3)});
+    `);
+
+    const response = await request(app).get("/api/market/history?cityName=Austin&countryCode=US&days=30");
+
+    expect(response.status).toBe(200);
+    expect(response.body.marketKey).toBe("austin-us");
+    expect(response.body.windowDays).toBe(30);
+    expect(Array.isArray(response.body.daily)).toBe(true);
+    expect(response.body.daily.length).toBeGreaterThanOrEqual(2);
+    expect(response.body.summary.recommendedAvg).toBeGreaterThan(0);
+    expect(response.body.summary.volatilityPct).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns ANALYSIS_REQUIRED for parity summary when no snapshot exists", async () => {
+    const response = await request(app).get(
+      "/api/parity/summary?cityName=Austin&countryCode=US&checkInDate=2026-03-10&checkOutDate=2026-03-12&directRate=229"
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toContain("No compset snapshot");
+    expect(response.body.details?.code).toBe("ANALYSIS_REQUIRED");
+  });
+
+  it("returns parity summary payload with risk and alerts", async () => {
+    const snapshotAt = new Date().toISOString();
+    executeSql(`
+      INSERT INTO compset_snapshots(city, check_in, check_out, hotel_name, hotel_id, rate, ota, collected_at)
+      VALUES
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel A', 'H1', 180, 'booking', ${sqlQuote(snapshotAt)}),
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel B', 'H2', 210, 'expedia', ${sqlQuote(snapshotAt)}),
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel C', 'H3', 235, 'agoda', ${sqlQuote(snapshotAt)}),
+        ('Austin', '2026-03-10', '2026-03-12', 'Hotel D', 'H4', 260, 'hotels', ${sqlQuote(snapshotAt)});
+    `);
+
+    const response = await request(app).get(
+      "/api/parity/summary?cityName=Austin&countryCode=US&checkInDate=2026-03-10&checkOutDate=2026-03-12&directRate=229&tolerancePct=2"
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.marketKey).toBe("austin-us");
+    expect(response.body.summary.undercutCount).toBeGreaterThan(0);
+    expect(response.body.summary.parityCount).toBeGreaterThanOrEqual(0);
+    expect(response.body.summary.overcutCount).toBeGreaterThan(0);
+    expect(["low", "medium", "high"]).toContain(response.body.summary.riskLevel);
+    expect(Array.isArray(response.body.alerts)).toBe(true);
   });
 });

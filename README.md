@@ -125,7 +125,12 @@ src/
 ## v2 Analysis Flow
 
 - Dashboard calls `/api/market/analysis` as the primary integration route.
+- Dashboard also uses:
+  - `/api/market/history` for DB-backed historical trend retrieval.
+  - `/api/parity/summary` for DB-backed OTA parity risk vs direct rate.
+- Parity baseline is the explicit `Direct Rate` entered in the search panel.
 - External provider calls are made only when the user clicks `Run Analysis`.
+- History/parity routes do not call external providers and do not consume provider budgets.
 - `/api/usage/summary` powers provider call counters and quota warnings in Settings.
 - Demo defaults are Austin-first (`AUS`, US) while global city search remains enabled.
 - `/api/market/analysis` returns `analysisContext`, `fallbacksUsed`, `sourceHealth`, and `explainabilityByDate` for per-date explainability UI.
@@ -139,8 +144,10 @@ src/
 
 - Frontend now uses backend proxy routes under `/api`.
 - Keep secrets only in `api/.env.local`.
+- Set `NIMBLERATE_DB_PATH` in `api/.env.local` only if you want to override the default SQLite path (`api/data/nimblerate.db`).
 - Fallback matrix in `/api/market/analysis`:
   - `trends_fallback_neutral`
   - `flight_demand_fallback_neutral`
   - `pms_fallback_simulated`
   - `university_fallback_none`
+- `ANALYSIS_REQUIRED` (HTTP 409) means history/parity data is not available yet for the selected market/date range. Run analysis first.

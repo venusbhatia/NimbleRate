@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
 import { getMarketAnalysis } from "../../services/analysisApi";
 import { ApiError } from "../../services/apiClient";
+import { getMarketHistory } from "../../services/historyApi";
+import { getParitySummary } from "../../services/parityApi";
 import { getProviderUsageSummary } from "../../services/usageApi";
 import { useSearchParams } from "../search/useSearchParams";
 import type {
@@ -16,6 +18,8 @@ import type {
 } from "../../types/dashboard";
 import type { PricingRecommendation } from "../../types/pricing";
 import type { LongWeekend, PublicHoliday } from "../../types/holidays";
+import type { MarketHistoryResponse } from "../../types/history";
+import type { ParitySummaryResponse } from "../../types/parity";
 
 function normalizeEventDate(rawDate: string) {
   if (rawDate.includes("T")) {
@@ -71,6 +75,25 @@ function toDashboardApiError(source: DashboardApiErrorSource, error: unknown): D
     message: "Unknown error",
     raw: stringifyRawError(error)
   };
+}
+
+export function isAnalysisRequiredError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return false;
+  }
+
+  if (error.details && typeof error.details === "object" && "details" in error.details) {
+    const nested = (error.details as { details?: unknown }).details;
+    if (nested && typeof nested === "object" && "code" in nested) {
+      return String((nested as { code?: unknown }).code) === "ANALYSIS_REQUIRED";
+    }
+  }
+
+  if (error.details && typeof error.details === "object" && "code" in error.details) {
+    return String((error.details as { code?: unknown }).code) === "ANALYSIS_REQUIRED";
+  }
+
+  return false;
 }
 
 function queryStatus(
@@ -278,11 +301,51 @@ export function useDashboardData() {
     queryFn: getProviderUsageSummary
   });
 
+  const historyQuery = useQuery({
+    queryKey: ["market-history", params.searchToken, params.cityName, params.countryCode],
+    enabled: params.searchToken > 0,
+    staleTime: 60_000,
+    queryFn: async () =>
+      getMarketHistory({
+        cityName: params.cityName,
+        countryCode: params.countryCode,
+        days: 30
+      })
+  });
+
+  const parityQuery = useQuery({
+    queryKey: [
+      "parity-summary",
+      params.searchToken,
+      params.cityName,
+      params.countryCode,
+      params.checkInDate,
+      params.checkOutDate,
+      params.directRate
+    ],
+    enabled: params.searchToken > 0,
+    staleTime: 60_000,
+    queryFn: async () =>
+      getParitySummary({
+        cityName: params.cityName,
+        countryCode: params.countryCode,
+        checkInDate: params.checkInDate,
+        checkOutDate: params.checkOutDate,
+        directRate: params.directRate
+      })
+  });
+
   const apiError = useMemo<DashboardApiErrorState | null>(() => {
     const details: DashboardApiErrorDetail[] = [];
 
     if (analysisQuery.error) details.push(toDashboardApiError("analysis", analysisQuery.error));
     if (usageSummaryQuery.error) details.push(toDashboardApiError("usage", usageSummaryQuery.error));
+    if (historyQuery.error && !isAnalysisRequiredError(historyQuery.error)) {
+      details.push(toDashboardApiError("history", historyQuery.error));
+    }
+    if (parityQuery.error && !isAnalysisRequiredError(parityQuery.error)) {
+      details.push(toDashboardApiError("parity", parityQuery.error));
+    }
 
     if (!details.length) return null;
 
@@ -290,7 +353,21 @@ export function useDashboardData() {
       summary: "Something went wrong while loading API data.",
       details
     };
-  }, [analysisQuery.error, usageSummaryQuery.error]);
+  }, [analysisQuery.error, usageSummaryQuery.error, historyQuery.error, parityQuery.error]);
+
+  const auxiliaryHints = useMemo(() => {
+    const hints: string[] = [];
+
+    if (isAnalysisRequiredError(historyQuery.error)) {
+      hints.push("Historical trend data will appear after at least one completed analysis run for this market.");
+    }
+
+    if (isAnalysisRequiredError(parityQuery.error)) {
+      hints.push("Parity summary requires a compset snapshot for this exact date range. Run analysis for these dates.");
+    }
+
+    return hints;
+  }, [historyQuery.error, parityQuery.error]);
 
   const fallbackModel = useMemo(() => createFallbackModel(params), [params]);
 
@@ -307,6 +384,20 @@ export function useDashboardData() {
       providerUsage: usageSummaryQuery.data?.providers ?? analysisQuery.data.model.providerUsage
     };
   }, [analysisQuery.data, fallbackModel, usageSummaryQuery.data?.providers]);
+
+  const history = useMemo<MarketHistoryResponse | null>(() => {
+    if (historyQuery.data && !isAnalysisRequiredError(historyQuery.error)) {
+      return historyQuery.data;
+    }
+    return null;
+  }, [historyQuery.data, historyQuery.error]);
+
+  const parity = useMemo<ParitySummaryResponse | null>(() => {
+    if (parityQuery.data && !isAnalysisRequiredError(parityQuery.error)) {
+      return parityQuery.data;
+    }
+    return null;
+  }, [parityQuery.data, parityQuery.error]);
 
   const eventDates = useMemo(() => {
     if (analysisQuery.data?.eventDates) {
@@ -459,10 +550,12 @@ export function useDashboardData() {
   return {
     model,
     apiError,
-    warnings: analysisQuery.data?.warnings ?? [],
+    warnings: [...(analysisQuery.data?.warnings ?? []), ...auxiliaryHints],
     analysisContext,
     fallbacksUsed: analysisQuery.data?.fallbacksUsed ?? [],
     usageSummary: usageSummaryQuery.data,
+    history,
+    parity,
     hasRunAnalysis: params.searchToken > 0,
     eventDates,
     holidayDates,
@@ -472,6 +565,10 @@ export function useDashboardData() {
     explainabilityByDate,
     sourceHealth,
     isLoading: params.searchToken > 0 && analysisQuery.isLoading,
-    isFetching: analysisQuery.isFetching || usageSummaryQuery.isFetching
+    isFetching:
+      analysisQuery.isFetching ||
+      usageSummaryQuery.isFetching ||
+      historyQuery.isFetching ||
+      parityQuery.isFetching
   };
 }

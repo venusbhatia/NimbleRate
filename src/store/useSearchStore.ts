@@ -12,6 +12,7 @@ interface SearchState {
   checkInDate: string;
   checkOutDate: string;
   adults: number;
+  directRate: number;
   hotelType: HotelType;
   estimatedOccupancy: number;
   setCity: (payload: {
@@ -23,6 +24,7 @@ interface SearchState {
   }) => void;
   setDates: (checkInDate: string, checkOutDate: string) => void;
   setAdults: (adults: number) => void;
+  setDirectRate: (directRate: number) => void;
   setHotelType: (hotelType: HotelType) => void;
   setEstimatedOccupancy: (estimatedOccupancy: number) => void;
   runAnalysis: () => void;
@@ -42,6 +44,7 @@ export const useSearchStore = create<SearchState>((set) => ({
   checkInDate: defaultCheckInDate,
   checkOutDate: defaultCheckOutDate,
   adults: 2,
+  directRate: 229,
   hotelType: "city",
   estimatedOccupancy: 68,
   setCity: (payload) =>
@@ -54,6 +57,7 @@ export const useSearchStore = create<SearchState>((set) => ({
     }),
   setDates: (checkInDate, checkOutDate) => set({ checkInDate, checkOutDate }),
   setAdults: (adults) => set({ adults }),
+  setDirectRate: (directRate) => set({ directRate }),
   setHotelType: (hotelType) => set({ hotelType }),
   setEstimatedOccupancy: (estimatedOccupancy) => set({ estimatedOccupancy }),
   runAnalysis: () => set((state) => ({ searchToken: state.searchToken + 1 }))

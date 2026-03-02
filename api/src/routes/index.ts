@@ -4,10 +4,10 @@ import ngeohash from "ngeohash";
 import { z } from "zod";
 import { config } from "../config.js";
 import { amadeusGet } from "../lib/amadeus.js";
-import { executeSql, sqlQuote } from "../lib/db.js";
+import { executeSql, queryJson, sqlQuote } from "../lib/db.js";
 import { generatePaceSimulation } from "../lib/paceSimulator.js";
 import { calculateV2Recommendations, summarizeRates, type V2WeatherCategory } from "../lib/priceEngineV2.js";
-import { buildUrl, fetchJsonCached, RequestValidationError, toApiError } from "../lib/http.js";
+import { buildUrl, fetchJsonCached, RequestValidationError, toApiError, UpstreamError } from "../lib/http.js";
 import { resolvePmsPace } from "../lib/pms/adapter.js";
 import { getAmadeusFlightDemandSignal, type FlightDemandSignal } from "../lib/providers/amadeusFlightDemand.js";
 import { searchMakcorpsCompset, getMakcorpsHotelRates, diagnoseMakcorpsCompset } from "../lib/providers/makcorps.js";
@@ -149,6 +149,24 @@ const marketAnalysisSchema = z.object({
   minPrice: zOptionalNumber,
   maxPrice: zOptionalNumber,
   totalRooms: zOptionalNumber
+});
+
+const marketHistorySchema = z.object({
+  cityName: zRequiredString,
+  countryCode: zRequiredString,
+  days: zOptionalNumber
+});
+
+const paritySummarySchema = z.object({
+  cityName: zRequiredString,
+  countryCode: zRequiredString,
+  checkInDate: zRequiredString,
+  checkOutDate: zRequiredString,
+  directRate: z.preprocess(
+    (value) => (Array.isArray(value) ? value[0] : value),
+    z.coerce.number().finite().positive()
+  ),
+  tolerancePct: zOptionalNumber
 });
 
 const paceSimulationBodySchema = z.object({
@@ -359,6 +377,48 @@ function saveAnalysisRun(marketKey: string, confidence: string, anchorRate: numb
   `);
 }
 
+function normalizeMarketKey(cityName: string, countryCode: string) {
+  const normalizedCity = cityName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const normalizedCountry = countryCode.trim().toLowerCase();
+  return `${normalizedCity}-${normalizedCountry}`;
+}
+
+function normalizeStoredMarketKey(rawMarketKey: string) {
+  const trimmed = rawMarketKey.trim();
+  if (!trimmed) return "";
+
+  const lower = trimmed.toLowerCase();
+  const parts = lower.split("-").filter(Boolean);
+  if (parts.length < 2) {
+    return lower.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  const country = parts[parts.length - 1];
+  const city = parts.slice(0, -1).join("-");
+  return normalizeMarketKey(city, country);
+}
+
+function median(values: number[]) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+  return sorted[middle];
+}
+
+function stdDev(values: number[]) {
+  if (!values.length) return 0;
+  const avg = average(values);
+  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
 type SourceHealthStatus = "ok" | "loading" | "error";
 type SourceHealthDiagnostics = {
   degraded: boolean;
@@ -567,6 +627,247 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/usage/summary", async (_req, res) => {
     await withRoute(res, async () => getUsageSummary());
+  });
+
+  app.get("/api/market/history", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, marketHistorySchema);
+      const days = Math.min(180, Math.max(7, Math.round(params.days ?? 30)));
+      const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const normalizedTargetKey = normalizeMarketKey(params.cityName, params.countryCode);
+      const legacyKey = `${params.cityName}-${params.countryCode}`.toLowerCase();
+
+      const runRows = queryJson<{
+        market_key: string;
+        requested_at: string;
+        confidence: string;
+        anchor_rate: number;
+        recommended_rate: number;
+      }>(`
+        SELECT market_key, requested_at, confidence, anchor_rate, recommended_rate
+        FROM analysis_runs
+        WHERE requested_at >= ${sqlQuote(cutoffIso)}
+        ORDER BY requested_at DESC
+        LIMIT 2000;
+      `).filter((row) => {
+        const normalizedRowKey = normalizeStoredMarketKey(String(row.market_key ?? ""));
+        const lowerRawKey = String(row.market_key ?? "").trim().toLowerCase();
+        return normalizedRowKey === normalizedTargetKey || lowerRawKey === legacyKey;
+      });
+
+      if (!runRows.length) {
+        throw new UpstreamError("No historical analysis runs found for this market", 409, {
+          code: "ANALYSIS_REQUIRED",
+          marketKey: normalizedTargetKey,
+          hint: "Run market analysis first to generate historical records."
+        });
+      }
+
+      const snapshotRows = queryJson<{ collected_at: string; rate: number }>(`
+        SELECT collected_at, rate
+        FROM compset_snapshots
+        WHERE lower(city) = ${sqlQuote(params.cityName.trim().toLowerCase())}
+          AND collected_at >= ${sqlQuote(cutoffIso)}
+        ORDER BY collected_at ASC;
+      `);
+
+      const snapshotsByDate = new Map<string, number[]>();
+      snapshotRows.forEach((row) => {
+        const date = String(row.collected_at ?? "").slice(0, 10);
+        const rate = Number(row.rate);
+        if (!date || !Number.isFinite(rate) || rate <= 0) return;
+        const bucket = snapshotsByDate.get(date) ?? [];
+        bucket.push(rate);
+        snapshotsByDate.set(date, bucket);
+      });
+
+      const sortedSnapshotDates = Array.from(snapshotsByDate.keys()).sort();
+      const snapshotSummaryByDate = new Map(
+        sortedSnapshotDates.map((date) => {
+          const rates = snapshotsByDate.get(date) ?? [];
+          return [
+            date,
+            {
+              compsetMedianRate: rates.length ? median(rates) : 0,
+              compsetSampleSize: rates.length
+            }
+          ] as const;
+        })
+      );
+
+      const runByDate = new Map<string, (typeof runRows)[number]>();
+      runRows.forEach((row) => {
+        const date = String(row.requested_at ?? "").slice(0, 10);
+        if (!date) return;
+        if (!runByDate.has(date)) {
+          runByDate.set(date, row);
+        }
+      });
+
+      const daily = Array.from(runByDate.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, row]) => {
+          const sameDaySnapshot = snapshotSummaryByDate.get(date);
+          const carryForwardSnapshot = sortedSnapshotDates
+            .filter((snapshotDate) => snapshotDate <= date)
+            .slice(-1)
+            .map((snapshotDate) => snapshotSummaryByDate.get(snapshotDate))
+            .filter((value): value is { compsetMedianRate: number; compsetSampleSize: number } => Boolean(value))[0];
+          const snapshot = sameDaySnapshot ?? carryForwardSnapshot ?? { compsetMedianRate: 0, compsetSampleSize: 0 };
+          const confidenceRaw = String(row.confidence ?? "low");
+          const confidence =
+            confidenceRaw === "high" || confidenceRaw === "medium" || confidenceRaw === "low"
+              ? confidenceRaw
+              : "low";
+
+          return {
+            date,
+            recommendedRate: Number(row.recommended_rate),
+            anchorRate: Number(row.anchor_rate),
+            confidence,
+            compsetMedianRate: Number(snapshot.compsetMedianRate.toFixed(2)),
+            compsetSampleSize: snapshot.compsetSampleSize
+          };
+        });
+
+      const recommendedRates = daily.map((point) => point.recommendedRate);
+      const compsetMedians = daily
+        .map((point) => point.compsetMedianRate)
+        .filter((value) => Number.isFinite(value) && value > 0);
+      const firstRate = recommendedRates[0] ?? 0;
+      const lastRate = recommendedRates[recommendedRates.length - 1] ?? 0;
+      const recommendedTrendPct = firstRate > 0 ? ((lastRate - firstRate) / firstRate) * 100 : 0;
+      const recommendedAvg = average(recommendedRates);
+      const volatilityPct = recommendedAvg > 0 ? (stdDev(recommendedRates) / recommendedAvg) * 100 : 0;
+
+      return {
+        marketKey: normalizedTargetKey,
+        windowDays: days,
+        daily,
+        summary: {
+          recommendedAvg: Number(recommendedAvg.toFixed(2)),
+          recommendedTrendPct: Number(recommendedTrendPct.toFixed(2)),
+          compsetAvg: Number(average(compsetMedians).toFixed(2)),
+          volatilityPct: Number(volatilityPct.toFixed(2))
+        }
+      };
+    });
+  });
+
+  app.get("/api/parity/summary", async (req, res) => {
+    await withRoute(res, async () => {
+      const params = validateQuery(req, paritySummarySchema);
+      const tolerancePct = Math.min(10, Math.max(0, Number(params.tolerancePct ?? 2)));
+      const cityName = params.cityName.trim();
+      const cityLower = cityName.toLowerCase();
+      const marketKey = normalizeMarketKey(cityName, params.countryCode);
+      const directRate = Number(params.directRate);
+      const lowerBound = directRate * (1 - tolerancePct / 100);
+      const upperBound = directRate * (1 + tolerancePct / 100);
+
+      const snapshotPointer = queryJson<{ collected_at: string }>(`
+        SELECT collected_at
+        FROM compset_snapshots
+        WHERE lower(city) = ${sqlQuote(cityLower)}
+          AND check_in = ${sqlQuote(params.checkInDate)}
+          AND check_out = ${sqlQuote(params.checkOutDate)}
+        ORDER BY collected_at DESC
+        LIMIT 1;
+      `)[0];
+
+      if (!snapshotPointer?.collected_at) {
+        throw new UpstreamError("No compset snapshot found for requested parity window", 409, {
+          code: "ANALYSIS_REQUIRED",
+          marketKey,
+          hint: "Run market analysis for this date range before checking parity."
+        });
+      }
+
+      const parityRows = queryJson<{ hotel_name: string; ota: string; rate: number }>(`
+        SELECT hotel_name, ota, rate
+        FROM compset_snapshots
+        WHERE lower(city) = ${sqlQuote(cityLower)}
+          AND check_in = ${sqlQuote(params.checkInDate)}
+          AND check_out = ${sqlQuote(params.checkOutDate)}
+          AND collected_at = ${sqlQuote(snapshotPointer.collected_at)}
+        ORDER BY rate ASC;
+      `);
+
+      if (!parityRows.length) {
+        throw new UpstreamError("No compset rates found for parity evaluation", 409, {
+          code: "ANALYSIS_REQUIRED",
+          marketKey,
+          hint: "Run market analysis for this date range before checking parity."
+        });
+      }
+
+      const rows = parityRows
+        .map((row) => {
+          const rate = Number(row.rate);
+          if (!Number.isFinite(rate) || rate <= 0) return null;
+
+          const delta = rate - directRate;
+          const deltaPct = directRate > 0 ? (delta / directRate) * 100 : 0;
+          const classification = rate < lowerBound ? "undercut" : rate > upperBound ? "overcut" : "parity";
+
+          return {
+            hotelName: String(row.hotel_name ?? "Unknown hotel"),
+            ota: String(row.ota ?? "unknown"),
+            rate: Number(rate.toFixed(2)),
+            delta: Number(delta.toFixed(2)),
+            deltaPct: Number(deltaPct.toFixed(2)),
+            classification
+          };
+        })
+        .filter(
+          (row): row is {
+            hotelName: string;
+            ota: string;
+            rate: number;
+            delta: number;
+            deltaPct: number;
+            classification: "undercut" | "parity" | "overcut";
+          } => Boolean(row)
+        );
+
+      const undercutRows = rows.filter((row) => row.classification === "undercut");
+      const parityCount = rows.filter((row) => row.classification === "parity").length;
+      const overcutCount = rows.filter((row) => row.classification === "overcut").length;
+      const undercutPct = rows.length ? (undercutRows.length / rows.length) * 100 : 0;
+      const riskLevel = undercutPct >= 60 ? "high" : undercutPct >= 30 ? "medium" : "low";
+
+      const alerts = undercutRows
+        .sort((a, b) => a.deltaPct - b.deltaPct)
+        .slice(0, 12)
+        .map((row) => ({
+          hotelName: row.hotelName,
+          ota: row.ota,
+          rate: row.rate,
+          delta: row.delta,
+          deltaPct: row.deltaPct,
+          severity: row.deltaPct <= -15 ? "high" : row.deltaPct <= -7 ? "medium" : "low"
+        }));
+
+      const rates = rows.map((row) => row.rate);
+
+      return {
+        marketKey,
+        directRate: Number(directRate.toFixed(2)),
+        tolerancePct: Number(tolerancePct.toFixed(2)),
+        snapshotAt: snapshotPointer.collected_at,
+        summary: {
+          undercutCount: undercutRows.length,
+          parityCount,
+          overcutCount,
+          undercutPct: Number(undercutPct.toFixed(2)),
+          minRate: Number(Math.min(...rates).toFixed(2)),
+          medianRate: Number(median(rates).toFixed(2)),
+          maxRate: Number(Math.max(...rates).toFixed(2)),
+          riskLevel
+        },
+        alerts
+      };
+    });
   });
 
   app.get("/api/market/analysis", async (req, res) => {
@@ -1222,7 +1523,7 @@ export function registerRoutes(app: Express) {
       };
 
       saveAnalysisRun(
-        `${cityName}-${params.countryCode}`,
+        normalizeMarketKey(cityName, params.countryCode),
         model.recommendationConfidence.level,
         model.marketAnchor.anchorRate,
         model.compsetPosition.recommendedRate,

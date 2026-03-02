@@ -1,11 +1,9 @@
 import {
   BarChart3,
-  CalendarCheck,
   CloudSun,
   ArrowRight,
   Zap,
   TrendingUp,
-  Shield,
   Ticket
 } from "lucide-react";
 import { Link } from "../router";

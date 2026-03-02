@@ -2,7 +2,7 @@ import { CalendarRange, ChartNoAxesCombined, Cog, Sparkles, Ticket } from "lucid
 import { useDashboardStore } from "../../store/useDashboardStore";
 import { cn } from "../ui/cn";
 
-const navItems = [
+export const dashboardNavItems = [
   { id: "dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
   { id: "calendar", label: "Calendar", icon: CalendarRange },
   { id: "events", label: "Events", icon: Ticket },
@@ -20,7 +20,7 @@ export function Sidebar() {
         <span className="text-lg font-bold tracking-tight">NimbleRate</span>
       </div>
       <nav className="space-y-2">
-        {navItems.map((item) => {
+        {dashboardNavItems.map((item) => {
           const Icon = item.icon;
           return (
             <button

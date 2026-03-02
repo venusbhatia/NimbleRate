@@ -62,7 +62,7 @@ const steps = [
 ];
 
 const stats = [
-  { value: "23%", label: "Average revenue uplift" },
+  { value: "23%", label: "Average revenue uplift*" },
   { value: "7", label: "Pricing factors analysed" },
   { value: "30", label: "Days of recommendations" },
   { value: "<1 min", label: "Time to first insight" }
@@ -95,6 +95,9 @@ export function LandingPage() {
               <p className="mt-6 max-w-lg text-lg leading-relaxed text-dune-600 dark:text-gray-400">
                 NimbleRate gives independent hotels, hostels, and B&Bs the same pricing
                 intelligence that big chains use — without the cost or complexity.
+              </p>
+              <p className="mt-2 max-w-lg text-sm text-dune-500 dark:text-gray-500">
+                Use alongside Booking.com, Airbnb, or your existing calendar — no integrations required.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <Link
@@ -232,6 +235,9 @@ export function LandingPage() {
               </div>
             ))}
           </div>
+          <p className="mx-auto mt-6 max-w-md text-center text-xs text-dune-400 dark:text-gray-500">
+            *Based on simulated pricing scenarios for independent properties using multi-factor rate optimization.
+          </p>
         </div>
       </section>
 

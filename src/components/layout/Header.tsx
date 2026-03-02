@@ -36,7 +36,15 @@ export function Header() {
             {sectionLabels[activeNav] ?? "Dashboard"}
           </p>
           <h1 className="text-xl font-bold tracking-tight md:text-2xl">
-            Today's Pricing Overview
+            {activeNav === "dashboard"
+              ? "Today's Pricing Overview"
+              : activeNav === "calendar"
+                ? "Rate Trends & Forecasts"
+                : activeNav === "events"
+                  ? "Upcoming Events"
+                  : activeNav === "settings"
+                    ? "Property Settings"
+                    : "Dashboard"}
           </h1>
         </div>
       </div>

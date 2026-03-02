@@ -16,25 +16,37 @@ Zero-touch, hyper-local dynamic pricing that moves as fast as the market.
 
 ```bash
 pnpm install
+pnpm --dir api install
 ```
 
 2. Add environment variables:
 
 ```bash
 cp .env.example .env.local
+cp api/.env.example api/.env.local
 ```
 
-Set these keys in `.env.local`:
+Set this if API is on a non-default host:
 
-- `VITE_AMADEUS_API_KEY`
-- `VITE_AMADEUS_API_SECRET`
-- `VITE_TICKETMASTER_API_KEY`
-- `VITE_OPENWEATHER_API_KEY`
+- `VITE_API_BASE_URL` (optional; defaults to same-origin `/api` with Vite proxy)
+
+Set secrets in `api/.env.local`:
+
+- `AMADEUS_API_KEY`
+- `AMADEUS_API_SECRET`
+- `TICKETMASTER_CONSUMER_KEY`
+- `OPENWEATHER_API_KEY`
 
 3. Start dev server:
 
 ```bash
 pnpm dev
+```
+
+4. In a second terminal, start API:
+
+```bash
+pnpm dev:api
 ```
 
 ## Team Workflow
@@ -80,5 +92,5 @@ src/
 
 ## Notes
 
-- API calls are currently direct from frontend for fast prototyping.
-- For production, proxy API keys through a backend service.
+- Frontend now uses backend proxy routes under `/api`.
+- Keep secrets only in `api/.env.local`.

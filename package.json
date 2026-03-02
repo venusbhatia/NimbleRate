@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "pnpm --dir api dev",
+    "build:api": "pnpm --dir api build",
+    "start:api": "pnpm --dir api start",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint ."

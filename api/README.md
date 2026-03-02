@@ -14,8 +14,36 @@ Initialize backend stack here when ready (Express/Fastify/Hono):
 
 ```bash
 cd api
-pnpm init
+pnpm install
 ```
+
+Create local secrets file:
+
+```bash
+cp .env.example .env.local
+```
+
+Start API server:
+
+```bash
+pnpm dev
+```
+
+## Current Routes
+
+- `GET /api/health`
+- `GET /api/hotels/by-city`
+- `GET /api/hotels/by-geocode`
+- `GET /api/hotels/offers`
+- `GET /api/hotels/offers/:offerId`
+- `GET /api/hotels/sentiments`
+- `GET /api/hotels/autocomplete`
+- `GET /api/events`
+- `GET /api/holidays/public`
+- `GET /api/holidays/long-weekends`
+- `GET /api/holidays/countries`
+- `GET /api/weather/forecast`
+- `GET /api/weather/geocode`
 
 Then expose routes like:
 

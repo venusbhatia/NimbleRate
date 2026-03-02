@@ -20,31 +20,37 @@ export function OccupancyBarChart({ data }: OccupancyBarChartProps) {
           </span>
         </div>
       </div>
-      <div className="h-72">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={data.slice(0, 14).map((item) => ({
-              day: item.date.slice(5),
-              multiplier: Number(item.finalMultiplier.toFixed(2)),
-              rate: Math.round(item.finalRate)
-            }))}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-            <Tooltip
-              contentStyle={{
-                borderRadius: "12px",
-                border: "1px solid #e5e7eb",
-                fontSize: "13px"
-              }}
-            />
-            <Bar yAxisId="left" dataKey="multiplier" name="Adjustment" fill="#059669" radius={[6, 6, 0, 0]} />
-            <Bar yAxisId="right" dataKey="rate" name="Rate ($)" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {data.length ? (
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={data.slice(0, 14).map((item) => ({
+                day: item.date.slice(5),
+                multiplier: Number(item.finalMultiplier.toFixed(2)),
+                rate: Math.round(item.finalRate)
+              }))}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: "12px",
+                  border: "1px solid #e5e7eb",
+                  fontSize: "13px"
+                }}
+              />
+              <Bar yAxisId="left" dataKey="multiplier" name="Adjustment" fill="#059669" radius={[6, 6, 0, 0]} />
+              <Bar yAxisId="right" dataKey="rate" name="Rate ($)" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <p className="rounded-xl border border-gray-200/80 bg-gray-50/80 px-3 py-8 text-sm text-gray-500 dark:border-gray-700 dark:bg-neutral-800/60 dark:text-gray-300">
+          No pricing factor data available. Run analysis to see adjustment trends.
+        </p>
+      )}
     </Card>
   );
 }

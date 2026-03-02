@@ -11,7 +11,8 @@ export function PriceLineChart({ data }: PriceLineChartProps) {
   return (
     <Card className="animate-slideUp">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold tracking-tight">30-Day Price Trend</h3>
+        <h3 className="text-lg font-semibold tracking-tight">Rate Trend</h3>
+        <span className="text-xs text-gray-500 dark:text-gray-400">30 days</span>
       </div>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
@@ -26,6 +27,11 @@ export function PriceLineChart({ data }: PriceLineChartProps) {
             <Tooltip
               formatter={(value) => [`$${Number(value ?? 0).toFixed(0)}`, "Recommended Rate"]}
               labelFormatter={(value) => `${value}`}
+              contentStyle={{
+                borderRadius: "12px",
+                border: "1px solid #e5e7eb",
+                fontSize: "13px"
+              }}
             />
             <Line
               type="monotone"

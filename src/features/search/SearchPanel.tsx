@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, Users } from "lucide-react";
+import { Building2, CalendarDays, HelpCircle, Users } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { useSearchStore } from "../../store/useSearchStore";
 import type { HotelType } from "../../types/common";
@@ -11,7 +11,16 @@ const cityPresets = [
   { label: "Tokyo, JP", cityCode: "TYO", countryCode: "JP", latitude: 35.6762, longitude: 139.6503 }
 ];
 
-const hotelTypeOptions: HotelType[] = ["city", "business", "leisure", "beach", "ski"];
+const hotelTypeOptions: { value: HotelType; label: string }[] = [
+  { value: "city", label: "City hotel" },
+  { value: "business", label: "Business hotel" },
+  { value: "leisure", label: "Leisure / Resort" },
+  { value: "beach", label: "Beach property" },
+  { value: "ski", label: "Ski lodge" }
+];
+
+const inputClass =
+  "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-gold-300 transition focus:ring dark:border-gray-600 dark:bg-neutral-800 dark:text-gray-100";
 
 export function SearchPanel() {
   const {
@@ -29,13 +38,26 @@ export function SearchPanel() {
     setEstimatedOccupancy
   } = useSearchStore();
 
+  const handleCheckIn = (value: string) => {
+    if (value > checkOutDate) {
+      setDates(value, value);
+    } else {
+      setDates(value, checkOutDate);
+    }
+  };
+
+  const handleCheckOut = (value: string) => {
+    if (value < checkInDate) return;
+    setDates(checkInDate, value);
+  };
+
   return (
     <Card className="animate-fadeIn bg-white/95 p-6 dark:bg-neutral-900/95">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 lg:items-end">
         <label className="space-y-2 lg:col-span-2">
-          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Building2 className="h-3.5 w-3.5" />
-            Market
+            Your Location
           </span>
           <select
             value={`${cityCode}-${countryCode}`}
@@ -45,7 +67,7 @@ export function SearchPanel() {
                 setCity(selected);
               }
             }}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-gold-300 transition focus:ring"
+            className={inputClass}
           >
             {cityPresets.map((city) => (
               <option key={city.label} value={`${city.cityCode}-${city.countryCode}`}>
@@ -56,66 +78,70 @@ export function SearchPanel() {
         </label>
 
         <label className="space-y-2">
-          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <CalendarDays className="h-3.5 w-3.5" />
             Check-In
           </span>
           <input
             type="date"
             value={checkInDate}
-            onChange={(event) => setDates(event.target.value, checkOutDate)}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-gold-300 transition focus:ring"
+            onChange={(event) => handleCheckIn(event.target.value)}
+            className={inputClass}
           />
         </label>
 
         <label className="space-y-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Check-Out</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Check-Out</span>
           <input
             type="date"
             value={checkOutDate}
-            onChange={(event) => setDates(checkInDate, event.target.value)}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-gold-300 transition focus:ring"
+            min={checkInDate}
+            onChange={(event) => handleCheckOut(event.target.value)}
+            className={inputClass}
           />
         </label>
 
         <label className="space-y-2">
-          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Users className="h-3.5 w-3.5" />
-            Adults
+            Guests
           </span>
           <select
             value={adults}
             onChange={(event) => setAdults(Number(event.target.value))}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-gold-300 transition focus:ring"
+            className={inputClass}
           >
             {[1, 2, 3, 4].map((value) => (
               <option key={value} value={value}>
-                {value}
+                {value} {value === 1 ? "guest" : "guests"}
               </option>
             ))}
           </select>
         </label>
 
         <label className="space-y-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Hotel Type</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Property Type</span>
           <select
             value={hotelType}
             onChange={(event) => setHotelType(event.target.value as HotelType)}
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm capitalize outline-none ring-gold-300 transition focus:ring"
+            className={inputClass}
           >
-            {hotelTypeOptions.map((type) => (
-              <option key={type} value={type} className="capitalize">
-                {type}
+            {hotelTypeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
         </label>
       </div>
 
-      <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
-          <span>Estimated Occupancy</span>
-          <span>{estimatedOccupancy}%</span>
+      <div className="mt-5">
+        <div className="mb-1.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <span className="flex items-center gap-1.5">
+            How full is your property?
+            <HelpCircle className="h-3 w-3 text-gray-400" />
+          </span>
+          <span className="tabular-nums text-dune-900 dark:text-gray-100">{estimatedOccupancy}%</span>
         </div>
         <input
           type="range"
@@ -124,8 +150,13 @@ export function SearchPanel() {
           step={1}
           value={estimatedOccupancy}
           onChange={(event) => setEstimatedOccupancy(Number(event.target.value))}
-          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gold-200"
+          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gold-200 dark:bg-gold-900/40"
         />
+        <div className="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-gray-500">
+          <span>Quiet</span>
+          <span>Half full</span>
+          <span>Packed</span>
+        </div>
       </div>
     </Card>
   );

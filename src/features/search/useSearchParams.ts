@@ -2,6 +2,7 @@ import { useSearchStore } from "../../store/useSearchStore";
 
 export function useSearchParams() {
   const {
+    cityName,
     cityCode,
     countryCode,
     latitude,
@@ -14,6 +15,7 @@ export function useSearchParams() {
   } = useSearchStore();
 
   return {
+    cityName,
     cityCode,
     countryCode,
     latitude,

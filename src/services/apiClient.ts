@@ -15,6 +15,21 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
   params?: Record<string, string | number | boolean | undefined>;
 }
 
+function extractErrorMessage(status: number, payload: unknown): string {
+  if (payload && typeof payload === "object" && "message" in payload) {
+    const message = (payload as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message.trim();
+    }
+  }
+
+  if (typeof payload === "string" && payload.trim().length > 0) {
+    return payload.trim();
+  }
+
+  return `Request failed: ${status}`;
+}
+
 function toQueryString(params?: Record<string, string | number | boolean | undefined>) {
   if (!params) {
     return "";
@@ -55,7 +70,7 @@ export async function apiFetch<T>(url: string, options: RequestOptions = {}): Pr
   }
 
   if (!response.ok) {
-    throw new ApiError(`Request failed: ${response.status}`, response.status, parsed);
+    throw new ApiError(extractErrorMessage(response.status, parsed), response.status, parsed);
   }
 
   return parsed as T;

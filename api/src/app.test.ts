@@ -63,4 +63,36 @@ describe("api routes", () => {
     expect(response.status).toBe(400);
     expect(response.body.message).toContain("cityCode");
   });
+
+  it("normalizes null public holidays payload to an empty array", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("null", {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    );
+
+    const response = await request(app).get("/api/holidays/public?year=2026&countryCode=AE");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it("normalizes non-array long weekend payload to an empty array", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ invalid: true }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    );
+
+    const response = await request(app).get("/api/holidays/long-weekends?year=2026&countryCode=AE");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
 });

@@ -1,9 +1,7 @@
 import { Menu, Moon, Sun } from "lucide-react";
 import { useEffect } from "react";
 import { useDashboardStore } from "../../store/useDashboardStore";
-import { dashboardNavItems } from "./navigation";
 import { Button } from "../ui/Button";
-import { cn } from "../ui/cn";
 
 const sectionLabels: Record<string, string> = {
   dashboard: "Overview",
@@ -15,12 +13,8 @@ const sectionLabels: Record<string, string> = {
 export function Header() {
   const theme = useDashboardStore((state) => state.theme);
   const activeNav = useDashboardStore((state) => state.activeNav);
-  const setActiveNav = useDashboardStore((state) => state.setActiveNav);
-  const pricePeriod = useDashboardStore((state) => state.pricePeriod);
-  const setPricePeriod = useDashboardStore((state) => state.setPricePeriod);
   const toggleTheme = useDashboardStore((state) => state.toggleTheme);
   const toggleMobileMenu = useDashboardStore((state) => state.toggleMobileMenu);
-  const activeNav = useDashboardStore((state) => state.activeNav);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");

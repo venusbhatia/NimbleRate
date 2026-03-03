@@ -1,4 +1,4 @@
-export type HotelType = "city" | "business" | "leisure" | "beach" | "ski";
+export type HotelType = "city" | "business" | "leisure" | "beach" | "ski" | "bnb";
 
 export type WeatherCategory =
   | "sunny"

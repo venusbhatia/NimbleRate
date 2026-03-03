@@ -54,8 +54,13 @@ export function MultiplierBreakdown({ recommendation }: MultiplierBreakdownProps
         })}
       </div>
       <div className="mt-4 rounded-xl border border-gold-200 bg-gold-50 p-3 text-sm text-gold-900 dark:border-gold-700/40 dark:bg-gold-900/20 dark:text-gold-300">
-        Raw: <strong>{recommendation.rawMultiplier.toFixed(2)}×</strong> → Final:{" "}
-        <strong>{recommendation.finalMultiplier.toFixed(2)}×</strong>
+        <p>
+          Combined factors suggest <strong>{recommendation.rawMultiplier.toFixed(2)}×</strong>, capped
+          to <strong>{recommendation.finalMultiplier.toFixed(2)}×</strong> for stability.
+        </p>
+        <p className="mt-1 text-xs opacity-80">
+          If your normal rate is $100, tonight's recommendation is ${(100 * recommendation.finalMultiplier).toFixed(0)}.
+        </p>
       </div>
     </Card>
   );

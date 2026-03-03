@@ -38,7 +38,7 @@ const cards = [
   {
     key: "multiplier",
     label: "Price Adjustment",
-    tooltip: "How much your base rate is being adjusted today based on all factors",
+    tooltip: "How much to adjust your base rate. For example, 1.20× means charge 20% above your normal price. If your rate is $100, tonight's recommendation is $120.",
     icon: ChartLine,
     value: (kpis: DashboardKpis) => `${kpis.activeMultiplier.toFixed(2)}×`,
     delta: (kpis: DashboardKpis) =>

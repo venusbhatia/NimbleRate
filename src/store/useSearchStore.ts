@@ -13,6 +13,7 @@ interface SearchState {
   adults: number;
   hotelType: HotelType;
   estimatedOccupancy: number;
+  baseRate: number;
   setCity: (payload: {
     cityName: string;
     cityCode: string | null;
@@ -24,6 +25,7 @@ interface SearchState {
   setAdults: (adults: number) => void;
   setHotelType: (hotelType: HotelType) => void;
   setEstimatedOccupancy: (estimatedOccupancy: number) => void;
+  setBaseRate: (baseRate: number) => void;
 }
 
 const now = new Date();
@@ -41,6 +43,7 @@ export const useSearchStore = create<SearchState>((set) => ({
   adults: 2,
   hotelType: "city",
   estimatedOccupancy: 68,
+  baseRate: 0,
   setCity: (payload) =>
     set({
       cityName: payload.cityName,
@@ -52,5 +55,6 @@ export const useSearchStore = create<SearchState>((set) => ({
   setDates: (checkInDate, checkOutDate) => set({ checkInDate, checkOutDate }),
   setAdults: (adults) => set({ adults }),
   setHotelType: (hotelType) => set({ hotelType }),
-  setEstimatedOccupancy: (estimatedOccupancy) => set({ estimatedOccupancy })
+  setEstimatedOccupancy: (estimatedOccupancy) => set({ estimatedOccupancy }),
+  setBaseRate: (baseRate) => set({ baseRate })
 }));

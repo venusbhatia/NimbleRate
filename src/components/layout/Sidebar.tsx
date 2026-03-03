@@ -32,7 +32,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1">
+      <nav className="flex-1 space-y-1" role="navigation" aria-label="Dashboard sections">
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -46,6 +46,7 @@ export function Sidebar() {
                   ? "bg-gold-100 text-gold-900 dark:bg-gold-900/30 dark:text-gold-300"
                   : "text-dune-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
               )}
+              aria-current={activeNav === item.id ? "page" : undefined}
             >
               <Icon className="h-4 w-4 shrink-0" />
               <div className="min-w-0">

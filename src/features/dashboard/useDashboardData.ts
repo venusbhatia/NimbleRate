@@ -33,7 +33,7 @@ function normalizeEventDate(rawDate: string) {
 }
 
 function getTierFromHotelType(hotelType: HotelType): "budget" | "midscale" | "luxury" {
-  if (hotelType === "business" || hotelType === "city") {
+  if (hotelType === "business" || hotelType === "city" || hotelType === "bnb") {
     return "budget";
   }
 
@@ -373,7 +373,14 @@ export function useDashboardData() {
 
     const baseRate = offerPrices.length ? average(offerPrices) : 220;
     const dates = getNextThirtyDays(params.checkInDate);
-    const events = eventsQuery.data?.events ?? [];
+    const rawEvents = eventsQuery.data?.events ?? [];
+    const seenEventKeys = new Set<string>();
+    const events = rawEvents.filter((event) => {
+      const key = `${event.name}|${normalizeEventDate(event.date)}|${event.venueName ?? ""}`;
+      if (seenEventKeys.has(key)) return false;
+      seenEventKeys.add(key);
+      return true;
+    });
     const weather = weatherQuery.data ?? [];
     const publicHolidays = normalizePublicHolidayEntries(holidaysQuery.data?.publicHolidays ?? []);
     const longWeekends = normalizeLongWeekendEntries(holidaysQuery.data?.longWeekends ?? []);

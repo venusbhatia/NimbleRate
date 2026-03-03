@@ -17,25 +17,44 @@ function eventTimestamp(event: TicketmasterEvent) {
   return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
 }
 
+const GENRE_WEIGHTS: Record<string, number> = {
+  "Rock": 10, "Pop": 10, "Hip-Hop/Rap": 9, "R&B": 8,
+  "Country": 7, "Jazz": 6, "Classical": 5, "Comedy": 6,
+  "Theatre": 5, "Dance": 5, "Fine Art": 3, "Family": 4,
+  "Children's Theatre": 3
+};
+
 function eventImpactScore(event: TicketmasterEvent) {
   const popularityScore = Math.min(60, Math.max(0, event.popularityScore));
   const priceScore = Math.min(25, ((event.maxPrice ?? event.minPrice ?? 0) / 500) * 25);
   const statusScore = event.status === "onsale" ? 15 : event.status === "offsale" ? 5 : 0;
-  return Math.round(popularityScore + priceScore + statusScore);
+
+  const genreBonus = GENRE_WEIGHTS[event.genre ?? ""] ?? 0;
+  const venueBonus = event.venueName ? 5 : 0;
+  const priceAvailBonus = (event.minPrice ?? 0) > 0 || (event.maxPrice ?? 0) > 0 ? 5 : 0;
+
+  return Math.min(100, Math.round(popularityScore + priceScore + statusScore + genreBonus + venueBonus + priceAvailBonus));
 }
 
 export function EventsList({ events, limit = 6 }: EventsListProps) {
   const [sortBy, setSortBy] = useState<EventsSort>("impact-desc");
+  const [segmentFilter, setSegmentFilter] = useState<string>("all");
+
+  const segments = useMemo(() => {
+    const set = new Set(events.map((e) => e.segment).filter(Boolean) as string[]);
+    return Array.from(set).sort();
+  }, [events]);
 
   const visibleEvents = useMemo(() => {
-    const sorted = [...events].sort((a, b) => {
+    const filtered = segmentFilter === "all" ? events : events.filter((e) => e.segment === segmentFilter);
+    const sorted = [...filtered].sort((a, b) => {
       if (sortBy === "date-asc") {
         return eventTimestamp(a) - eventTimestamp(b);
       }
       return eventImpactScore(b) - eventImpactScore(a);
     });
     return sorted.slice(0, limit);
-  }, [events, limit, sortBy]);
+  }, [events, limit, segmentFilter, sortBy]);
 
   return (
     <Card className="animate-slideUp bg-white/95 dark:bg-neutral-900/95">
@@ -46,6 +65,18 @@ export function EventsList({ events, limit = 6 }: EventsListProps) {
         </div>
         <div className="flex items-center gap-2">
           <Badge tone="gold">{events.length} events</Badge>
+          {segments.length > 1 && (
+            <select
+              value={segmentFilter}
+              onChange={(event) => setSegmentFilter(event.target.value)}
+              className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs dark:border-gray-700 dark:bg-neutral-900"
+            >
+              <option value="all">All types</option>
+              {segments.map((seg) => (
+                <option key={seg} value={seg}>{seg}</option>
+              ))}
+            </select>
+          )}
           <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as EventsSort)}

@@ -13,15 +13,40 @@ interface DashboardState {
   closeMobileMenu: () => void;
 }
 
+function getStoredTheme(): "light" | "dark" {
+  try {
+    const stored = localStorage.getItem("nimblerate-theme");
+    if (stored === "dark" || stored === "light") return stored;
+  } catch {
+    /* localStorage may be unavailable */
+  }
+  return "light";
+}
+
+function persistTheme(theme: "light" | "dark") {
+  try {
+    localStorage.setItem("nimblerate-theme", theme);
+  } catch {
+    /* ignore */
+  }
+}
+
 export const useDashboardStore = create<DashboardState>((set, get) => ({
   activeNav: "dashboard",
-  theme: "light",
+  theme: getStoredTheme(),
   pricePeriod: 30,
   isMobileMenuOpen: false,
   setActiveNav: (activeNav) => set({ activeNav, isMobileMenuOpen: false }),
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    persistTheme(theme);
+    set({ theme });
+  },
   setPricePeriod: (pricePeriod) => set({ pricePeriod }),
-  toggleTheme: () => set({ theme: get().theme === "light" ? "dark" : "light" }),
+  toggleTheme: () => {
+    const next = get().theme === "light" ? "dark" : "light";
+    persistTheme(next);
+    set({ theme: next });
+  },
   toggleMobileMenu: () => set({ isMobileMenuOpen: !get().isMobileMenuOpen }),
   closeMobileMenu: () => set({ isMobileMenuOpen: false })
 }));

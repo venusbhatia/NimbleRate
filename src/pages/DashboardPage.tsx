@@ -156,7 +156,7 @@ export function DashboardPage() {
             <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
               Configure your location, property type, and occupancy to get accurate pricing recommendations.
             </p>
-            <SearchPanel />
+            <SearchPanel showBaseRate />
           </div>
 
           <div className="rounded-2xl border border-gray-200/70 bg-white/90 p-6 shadow-card dark:border-gray-700 dark:bg-neutral-900/90">

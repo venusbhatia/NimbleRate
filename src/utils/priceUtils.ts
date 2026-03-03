@@ -26,7 +26,7 @@ export function getDayOfWeekMultiplier(date: string, hotelType: HotelType) {
     return businessMap[day];
   }
 
-  if (hotelType === "leisure" || hotelType === "beach") {
+  if (hotelType === "leisure" || hotelType === "beach" || hotelType === "bnb") {
     const leisureMap = [1.15, 0.9, 0.8, 0.8, 0.9, 1.05, 1.2];
     return leisureMap[day];
   }

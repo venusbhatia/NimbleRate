@@ -62,7 +62,8 @@ const hotelTypeOptions: { value: HotelType; label: string }[] = [
   { value: "business", label: "Business hotel" },
   { value: "leisure", label: "Leisure / Resort" },
   { value: "beach", label: "Beach property" },
-  { value: "ski", label: "Ski lodge" }
+  { value: "ski", label: "Ski lodge" },
+  { value: "bnb", label: "B&B / Guesthouse" }
 ];
 
 const inputClass =
@@ -189,7 +190,11 @@ function isHighConfidenceIntentMatch(
   return score >= 110;
 }
 
-export function SearchPanel() {
+interface SearchPanelProps {
+  showBaseRate?: boolean;
+}
+
+export function SearchPanel({ showBaseRate = false }: SearchPanelProps) {
   const {
     cityName,
     countryCode,
@@ -198,11 +203,13 @@ export function SearchPanel() {
     adults,
     hotelType,
     estimatedOccupancy,
+    baseRate,
     setCity,
     setDates,
     setAdults,
     setHotelType,
-    setEstimatedOccupancy
+    setEstimatedOccupancy,
+    setBaseRate
   } = useSearchStore();
   const [cityQuery, setCityQuery] = useState([cityName, countryCode].filter(Boolean).join(", "));
   const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
@@ -522,6 +529,30 @@ export function SearchPanel() {
           <span>Packed</span>
         </div>
       </div>
+
+      {showBaseRate && (
+        <div className="mt-5">
+          <label
+            htmlFor="base-rate-input"
+            className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+          >
+            Your Base Rate ($)
+          </label>
+          <input
+            id="base-rate-input"
+            type="number"
+            min={0}
+            step={5}
+            placeholder="e.g. 85"
+            value={baseRate || ""}
+            onChange={(event) => setBaseRate(Number(event.target.value) || 0)}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm tabular-nums placeholder:text-gray-400 focus:border-gold-400 focus:outline-none focus:ring-1 focus:ring-gold-400 dark:border-gray-700 dark:bg-neutral-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+          />
+          <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+            Your normal nightly rate — used to show $ recommendations
+          </p>
+        </div>
+      )}
     </Card>
   );
 }
